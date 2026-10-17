@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEXUS ALPHA — Cyberpunk / Wall Street Dark Theme
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme inline {
+  --color-background: #080C14;
+  --color-foreground: #E2E8F0;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Nexus Trading Colors */
+  --color-nexus-bg: #080C14;
+  --color-nexus-card: #0F1419;
+  --color-nexus-card-hover: #151C24;
+  --color-nexus-border: #1E293B;
+  --color-nexus-bull: #10B981;
+  --color-nexus-bear: #F43F5E;
+  --color-nexus-gold: #F59E0B;
+  --color-nexus-violet: #8B5CF6;
+  --color-nexus-blue: #3B82F6;
+  --color-nexus-cyan: #06B6D4;
+  --color-nexus-text: #E2E8F0;
+  --color-nexus-muted: #64748B;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-nexus-bg);
+  color: var(--color-nexus-text);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Animations ───────────────────────────────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px rgba(139, 92, 246, 0.15);
+  }
+}
+
+@keyframes price-flash-up {
+  0% { background-color: rgba(16, 185, 129, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes price-flash-down {
+  0% { background-color: rgba(244, 63, 94, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-price-up {
+  animation: price-flash-up 0.6s ease-out;
+}
+
+.animate-price-down {
+  animation: price-flash-down 0.6s ease-out;
+}
+
+.animate-slide-in {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* ── Glassmorphism ────────────────────────────────────────────────── */
+.glass-panel {
+  background: rgba(15, 20, 25, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(30, 41, 59, 0.5);
+}
+
+/* ── Selection ────────────────────────────────────────────────────── */
+::selection {
+  background-color: rgba(139, 92, 246, 0.3);
+  color: #E2E8F0;
+}
