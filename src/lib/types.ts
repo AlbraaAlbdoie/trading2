@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Core Type Definitions
+// NEXUS ALPHA — Core Type Definitions (Arabic RTL & Multi-Asset Support)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Active market asset tab */
@@ -21,10 +21,134 @@ export type WsStatus = "connected" | "connecting" | "disconnected" | "error";
 
 /** BTC market health assessment */
 export type MarketHealth =
-  | "STABLE"       // Safe to trade
-  | "CAUTION"      // Moderate volatility
-  | "HIGH_RISK"    // Dump / pump risk — stay in cash
+  | "STABLE"       // مستقر - آمن للتداول
+  | "CAUTION"      // تذبذب متوسط - بحذر
+  | "HIGH_RISK"    // خطر تصحيح/انهيار - البقاء كاش
   | "UNKNOWN";
+
+/** TradingView Chart Timeframes */
+export type TimeframeInterval = "5" | "15" | "60" | "240" | "D";
+
+/** AI Providers & Models */
+export type AiModelOption =
+  | "gemini-2.0-flash"
+  | "groq-llama-3.3"
+  | "claude-3.5-sonnet"
+  | "gpt-4o";
+
+/** API Keys & Provider Settings */
+export interface ApiSettingsConfig {
+  geminiKey: string;
+  groqKey: string;
+  openRouterKey: string;
+  goldKey: string;
+  selectedModel: AiModelOption;
+}
+
+/** Standard Candlestick data */
+export interface CandleData {
+  openTime: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  closeTime: number;
+}
+
+/** Smart Money Concepts (SMC) Computed Metrics */
+export interface SmcMetrics {
+  htfBias: "BULLISH" | "BEARISH" | "CHOPPY";
+  ltfStructure: "BULLISH" | "BEARISH" | "RANGE";
+  recentFvg: {
+    type: "BULLISH" | "BEARISH" | "NONE";
+    top: number;
+    bottom: number;
+  };
+  orderBlock: {
+    type: "BULLISH" | "BEARISH" | "NONE";
+    high: number;
+    low: number;
+  };
+  rvol: number;
+  fundingRate?: number;
+  openInterestChange1h?: number;
+  btcDumpRisk: boolean;
+}
+
+/** AI Trade Recommendation Schema (Strict Output) */
+export interface AiTradeRecommendation {
+  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
+  confidence_score: number;
+  symbol: string;
+  timeframe_confluence: string;
+  entry_price: number;
+  stop_loss: number;
+  take_profit_1: number;
+  take_profit_2: number;
+  risk_reward_ratio: string;
+  reasoning_arabic: string;
+  btc_warning: string | null;
+  model_used?: string;
+  timestamp: number;
+}
+
+/** Trade History Journal Entry */
+export type TradeOutcome = "PENDING" | "WIN" | "LOSS";
+
+export interface TradeJournalEntry {
+  id: string;
+  symbol: string;
+  type: "LONG" | "SHORT" | "SPOT_BUY";
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  riskRewardRatio: string;
+  confidenceScore: number;
+  timeframeConfluence: string;
+  outcome: TradeOutcome;
+  timestamp: number;
+  modelUsed?: string;
+}
+
+/** Supabase Auth User */
+export interface AuthUser {
+  id: string;
+  email: string;
+}
+
+/** Saved Signal in Supabase */
+export interface SavedSignalItem {
+  id: string;
+  user_id: string;
+  symbol: string;
+  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
+  entry_price: number;
+  stop_loss: number;
+  take_profit_1: number;
+  take_profit_2: number;
+  risk_reward_ratio: string;
+  confidence_score: number;
+  timeframe_confluence: string;
+  reasoning_arabic: string;
+  created_at: string;
+}
+
+/** Toast Notification */
+export interface ToastNotification {
+  id: string;
+  message: string;
+  type: "success" | "error" | "info";
+}
+
+/** AI Analysis API Request Payload */
+export interface AiAnalysisRequest {
+  symbol: string;
+  market: MarketTab;
+  tradeMode: TradeMode;
+  apiSettings?: Partial<ApiSettingsConfig>;
+}
 
 /** Raw Binance 24h ticker from REST or WS */
 export interface BinanceTickerRaw {
@@ -51,12 +175,12 @@ export interface TickerData {
   rvol: number;            // relative volume multiplier
   highPrice: number;
   lowPrice: number;
-  isNew?: boolean;         // just appeared
+  isNew?: boolean;
   priceDirection: "up" | "down" | "neutral";
   lastUpdate: number;      // timestamp ms
 }
 
-/** Gold XAU/USD ticker (from external source or mock) */
+/** Gold XAU/USD ticker */
 export interface GoldTickerData {
   symbol: "XAUUSD";
   displayName: "XAU/USD";
@@ -73,44 +197,9 @@ export interface GoldTickerData {
 export interface BtcHealthState {
   price: number;
   change24h: number;
-  volatility: number;      // computed from high/low range
+  volatility: number;
   health: MarketHealth;
   lastUpdate: number;
-}
-
-/** Dashboard global store */
-export interface DashboardState {
-  // Market selection
-  activeMarket: MarketTab;
-  tradeMode: TradeMode;
-  
-  // Data
-  tickers: TickerData[];
-  goldTicker: GoldTickerData | null;
-  btcHealth: BtcHealthState;
-  
-  // UI state
-  searchQuery: string;
-  activeFilter: FilterPreset;
-  selectedSymbol: string | null;  // for sidebar analysis
-  audioEnabled: boolean;
-  wsStatus: WsStatus;
-  
-  // Safety
-  noTradeMode: boolean;           // choppy market — stay in cash
-  
-  // Actions
-  setActiveMarket: (market: MarketTab) => void;
-  setTradeMode: (mode: TradeMode) => void;
-  setSearchQuery: (query: string) => void;
-  setActiveFilter: (filter: FilterPreset) => void;
-  setSelectedSymbol: (symbol: string | null) => void;
-  setAudioEnabled: (enabled: boolean) => void;
-  setWsStatus: (status: WsStatus) => void;
-  updateTickers: (tickers: TickerData[]) => void;
-  updateBtcHealth: (health: BtcHealthState) => void;
-  updateGoldTicker: (ticker: GoldTickerData) => void;
-  setNoTradeMode: (active: boolean) => void;
 }
 
 /** Screener table column definition */

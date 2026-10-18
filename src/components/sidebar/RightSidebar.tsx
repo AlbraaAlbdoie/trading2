@@ -1,108 +1,58 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Right Sidebar (Reserved for Chart + AI Engine)
-// Placeholder containers for Prompts 2 & 3
+// NEXUS ALPHA — Right Sidebar (TradingView Chart + AI Recommendation Engine)
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
 import React from "react";
-import { BarChart3, Bot, Crosshair, ArrowRight } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Crosshair, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TradingViewChart } from "@/components/chart/TradingViewChart";
+import { AiRecommendationCard } from "@/components/ai/AiRecommendationCard";
 import { useDashboardStore } from "@/store/useDashboardStore";
-import { cn } from "@/lib/utils";
 
 export function RightSidebar() {
   const { state } = useDashboardStore();
-  const { selectedSymbol } = state;
+  const { selectedSymbol, activeMarket, tradeMode } = state;
 
   return (
-    <div className="flex flex-col h-full bg-[#080C14] overflow-y-auto">
-      {/* Selected Symbol Header */}
-      {selectedSymbol ? (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#1E293B] bg-[#0A0F16]">
+    <div className="flex flex-col h-full bg-[#080C14] overflow-y-auto border-l border-[#1E293B]">
+      {/* Active Symbol Header */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1E293B] bg-[#0A0F16] shrink-0">
+        <div className="flex items-center gap-2">
           <Crosshair className="h-4 w-4 text-[#8B5CF6]" />
-          <span className="text-sm font-bold text-[#E2E8F0]">{selectedSymbol}</span>
-          <Badge variant="violet" className="text-[10px]">SELECTED</Badge>
+          <span className="text-xs text-[#64748B]">الأصل النشط:</span>
+          <span className="text-sm font-bold text-[#E2E8F0] font-mono">
+            {activeMarket === "gold" ? "XAU/USD (Gold)" : selectedSymbol}
+          </span>
         </div>
-      ) : (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#1E293B] bg-[#0A0F16]">
-          <ArrowRight className="h-4 w-4 text-[#64748B]" />
-          <span className="text-xs text-[#64748B]">Select a coin to analyze</span>
-        </div>
-      )}
-
-      {/* TradingView Chart Placeholder (Prompt 2) */}
-      <div className="p-3">
-        <Card className="border-dashed">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BarChart3 className="h-4 w-4 text-[#06B6D4]" />
-              Multi-Timeframe Chart
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              className={cn(
-                "flex flex-col items-center justify-center rounded-lg border border-dashed border-[#1E293B] bg-[#080C14]",
-                "h-[280px] gap-3",
-              )}
-            >
-              <BarChart3 className="h-10 w-10 text-[#1E293B]" />
-              <div className="text-center">
-                <p className="text-xs font-semibold text-[#64748B]">TradingView Chart</p>
-                <p className="text-[10px] text-[#475569] mt-1">Coming in Prompt 2</p>
-              </div>
-              {selectedSymbol && (
-                <Badge variant="default" className="text-[10px] mt-2">
-                  Ready for {selectedSymbol}
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <Badge variant="violet" className="text-[10px] font-mono">
+          {activeMarket === "gold"
+            ? "OANDA"
+            : tradeMode === "futures"
+              ? "BINANCE FUTURES"
+              : "BINANCE SPOT"}
+        </Badge>
       </div>
 
-      {/* AI Recommendation Engine Placeholder (Prompt 3) */}
-      <div className="p-3 pt-0">
-        <Card className="border-dashed">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Bot className="h-4 w-4 text-[#8B5CF6]" />
-              AI Recommendation Engine
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              className={cn(
-                "flex flex-col items-center justify-center rounded-lg border border-dashed border-[#1E293B] bg-[#080C14]",
-                "h-[200px] gap-3",
-              )}
-            >
-              <div className="relative">
-                <Bot className="h-10 w-10 text-[#1E293B]" />
-                <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-[#8B5CF6]/30 animate-ping" />
-              </div>
-              <div className="text-center">
-                <p className="text-xs font-semibold text-[#64748B]">AI Analysis Engine</p>
-                <p className="text-[10px] text-[#475569] mt-1">Coming in Prompt 3</p>
-              </div>
-              {selectedSymbol && (
-                <Badge variant="violet" className="text-[10px] mt-2">
-                  Queued: {selectedSymbol}
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {/* 1. TradingView Multi-Timeframe Chart */}
+      <div className="p-3 pb-1 h-[420px] shrink-0">
+        <TradingViewChart className="h-full" />
       </div>
 
-      {/* Trade Safety Reminder */}
-      <div className="p-3 pt-0 mt-auto">
-        <div className="rounded-lg border border-[#1E293B] bg-[#0F1419]/50 p-3">
-          <p className="text-[10px] text-[#64748B] leading-relaxed">
-            <span className="text-[#F59E0B] font-bold">⚡ Safety First: </span>
-            Always validate AI signals with your own analysis.
-            Never risk more than 1-2% per trade. Set stop losses.
+      {/* 2. Core AI Trade Recommendation Card (SMC & Multi-Provider) */}
+      <div className="p-3 pt-2">
+        <AiRecommendationCard />
+      </div>
+
+      {/* 3. Risk Management Reminder */}
+      <div className="p-3 pt-1 mt-auto">
+        <div className="rounded-xl border border-[#1E293B] bg-[#0A0F16] p-2.5 text-xs leading-relaxed">
+          <div className="flex items-center gap-1.5 text-[#F59E0B] font-bold mb-0.5">
+            <ShieldAlert className="h-3.5 w-3.5 text-[#F59E0B]" />
+            قواعد إدارة المخاطر الصارمة:
+          </div>
+          <p className="text-[#64748B] text-[10px]">
+            لا تخاطر بأكثر من 1-2% من محفظتك في أي صفقة منفردة. استخدم دائماً أمر وقف الخسارة (Stop Loss) وتأكد من توافق الاتجاه مع مؤشر صحة البيتكوين.
           </p>
         </div>
       </div>

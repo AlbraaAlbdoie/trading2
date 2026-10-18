@@ -1,11 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Main Screener Table
-// Filterable, sortable live trading screener
+// NEXUS ALPHA — Screener Table (Arabic RTL)
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ArrowUpDown, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Loader2, Sparkles } from "lucide-react";
 import { ScreenerRow } from "./ScreenerRow";
 import { ScreenerFilters } from "./ScreenerFilters";
 import { useDashboardStore } from "@/store/useDashboardStore";
@@ -16,18 +15,15 @@ import type { TickerData, FilterPreset } from "@/lib/types";
 type SortKey = "symbol" | "markPrice" | "priceChange24h" | "volume24h" | "rvol";
 type SortDir = "asc" | "desc";
 
-/** Apply filter preset logic */
 function applyFilter(tickers: TickerData[], filter: FilterPreset): TickerData[] {
   switch (filter) {
     case "top_gainers":
-      return [...tickers].sort((a, b) => b.priceChange24h - a.priceChange24h).slice(0, 30);
+      return [...tickers].sort((a, b) => b.priceChange24h - a.priceChange24h).slice(0, 35);
     case "high_volume":
-      return [...tickers].sort((a, b) => b.volume24h - a.volume24h).slice(0, 30);
+      return [...tickers].sort((a, b) => b.volume24h - a.volume24h).slice(0, 35);
     case "short_squeeze":
-      // Short squeeze candidates: negative 24h but high RVOL (potential reversal)
       return tickers.filter((t) => t.priceChange24h < -2 && t.rvol >= 1.5);
     case "spot_accumulation":
-      // Accumulation: low change but above-average volume (quiet accumulation)
       return tickers.filter(
         (t) => Math.abs(t.priceChange24h) < 3 && t.rvol >= 1.3,
       );
@@ -37,16 +33,19 @@ function applyFilter(tickers: TickerData[], filter: FilterPreset): TickerData[] 
 }
 
 export function ScreenerTable() {
-  const { state, setSelectedSymbol } = useDashboardStore();
+  const { state, setSelectedSymbol, runAiAnalysis } = useDashboardStore();
   const { tickers, searchQuery, activeFilter, selectedSymbol } = state;
   const [sortKey, setSortKey] = useState<SortKey>("volume24h");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  // Filter → Search → Sort pipeline
+  const handleAnalyzeCoin = (symbol: string) => {
+    setSelectedSymbol(symbol);
+    runAiAnalysis(symbol);
+  };
+
   const filteredTickers = useMemo(() => {
     let result = applyFilter(tickers, activeFilter);
 
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toUpperCase();
       result = result.filter(
@@ -57,7 +56,6 @@ export function ScreenerTable() {
       );
     }
 
-    // Sort
     result.sort((a, b) => {
       const aVal = a[sortKey];
       const bVal = b[sortKey];
@@ -87,7 +85,7 @@ export function ScreenerTable() {
   const noResults = !isEmpty && filteredTickers.length === 0;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-[#080C14]">
       {/* Filters */}
       <ScreenerFilters />
 
@@ -98,7 +96,7 @@ export function ScreenerTable() {
         ) : noResults ? (
           <EmptyState />
         ) : (
-          <table className="w-full">
+          <table className="w-full border-collapse">
             {/* Header */}
             <thead className="sticky top-0 z-10 bg-[#0A0F16]">
               <tr>
@@ -106,9 +104,9 @@ export function ScreenerTable() {
                   <th
                     key={col.key}
                     className={cn(
-                      "px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-[#64748B] border-b border-[#1E293B]",
-                      col.align === "left" && "text-left",
+                      "px-4 py-2.5 text-[11px] font-bold text-[#64748B] border-b border-[#1E293B]",
                       col.align === "right" && "text-right",
+                      col.align === "left" && "text-left",
                       col.align === "center" && "text-center",
                       col.sortable && "cursor-pointer hover:text-[#E2E8F0] transition-colors select-none",
                     )}
@@ -139,7 +137,7 @@ export function ScreenerTable() {
                 <ScreenerRow
                   key={ticker.symbol}
                   ticker={ticker}
-                  onAnalyze={setSelectedSymbol}
+                  onAnalyze={handleAnalyzeCoin}
                   isSelected={selectedSymbol === ticker.symbol}
                 />
               ))}
@@ -151,11 +149,14 @@ export function ScreenerTable() {
       {/* Footer Stats */}
       {!isEmpty && (
         <div className="flex items-center justify-between px-4 py-2 border-t border-[#1E293B] bg-[#0A0F16] text-xs text-[#64748B]">
-          <span>
-            Showing {filteredTickers.length} of {tickers.length} instruments
-          </span>
-          <span className="font-mono">
-            Vol Filter: ≥ $30M
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-[#8B5CF6]" />
+            <span>
+              عرض {filteredTickers.length} من أصل {tickers.length} زوج مؤهل
+            </span>
+          </div>
+          <span className="font-mono text-[11px] bg-[#1E293B]/40 px-2 py-0.5 rounded border border-[#1E293B]">
+            فلتر السيولة الصارم: حجم 24س ≥ 30,000,000 USDT
           </span>
         </div>
       )}
@@ -165,11 +166,15 @@ export function ScreenerTable() {
 
 function LoadingState() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
+    <div className="flex flex-col items-center justify-center h-72 gap-4">
       <Loader2 className="h-8 w-8 text-[#8B5CF6] animate-spin" />
       <div className="text-center">
-        <p className="text-sm font-semibold text-[#E2E8F0]">Connecting to Binance</p>
-        <p className="text-xs text-[#64748B] mt-1">Loading live market data...</p>
+        <p className="text-sm font-bold text-[#E2E8F0]">
+          الاتصال بمحرك بث بينانس المباشر...
+        </p>
+        <p className="text-xs text-[#64748B] mt-1">
+          جارٍ جلب وتصفية أسعار العملات ومعدلات السيولة الفورية
+        </p>
       </div>
     </div>
   );
@@ -177,9 +182,10 @@ function LoadingState() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-3">
+    <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
       <div className="text-4xl">🔍</div>
-      <p className="text-sm text-[#64748B]">No instruments match your filters</p>
+      <p className="text-sm font-semibold text-[#E2E8F0]">لم يتم العثور على أزواج مطابقة للبحث</p>
+      <p className="text-xs text-[#64748B]">جرب تغيير شروط الفلتر أو كتابة رمز عملة آخر</p>
     </div>
   );
 }

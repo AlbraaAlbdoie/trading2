@@ -1,13 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Screener Table Row
-// Individual coin row with price flash animation & analyze action
+// NEXUS ALPHA — Screener Table Row (Arabic RTL)
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BarChart3, ChevronRight } from "lucide-react";
+import { LineChart, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { playTradeChime } from "@/hooks/useAudioAlert";
+import { useDashboardStore } from "@/store/useDashboardStore";
 import type { TickerData } from "@/lib/types";
 import { cn, formatPrice, formatPercent, formatVolume } from "@/lib/utils";
 
@@ -19,8 +20,9 @@ interface ScreenerRowProps {
 
 export function ScreenerRow({ ticker, onAnalyze, isSelected }: ScreenerRowProps) {
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
+  const { state } = useDashboardStore();
+  const { audioEnabled } = state;
 
-  // Flash animation on price change
   useEffect(() => {
     if (ticker.priceDirection === "up") {
       setFlash("up");
@@ -34,40 +36,50 @@ export function ScreenerRow({ ticker, onAnalyze, isSelected }: ScreenerRowProps)
   const isBullish = ticker.priceChange24h >= 0;
   const isHighRvol = ticker.rvol >= 2;
 
+  const handleRowClick = () => {
+    onAnalyze(ticker.symbol);
+    if (audioEnabled) {
+      playTradeChime("high");
+    }
+  };
+
   return (
     <tr
+      onClick={handleRowClick}
       className={cn(
-        "group border-b border-[#1E293B]/50 transition-all duration-200 hover:bg-[#151C24]",
-        isSelected && "bg-[#8B5CF6]/5 border-l-2 border-l-[#8B5CF6]",
-        flash === "up" && "bg-[#10B981]/5",
-        flash === "down" && "bg-[#F43F5E]/5",
+        "group border-b border-[#1E293B]/40 transition-all duration-150 cursor-pointer select-none",
+        isSelected
+          ? "bg-[#8B5CF6]/10 border-r-4 border-r-[#8B5CF6]"
+          : "hover:bg-[#151C24]/80",
+        flash === "up" && "animate-price-up",
+        flash === "down" && "animate-price-down",
       )}
     >
       {/* Symbol */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 text-right">
         <div className="flex items-center gap-2.5">
           <div
             className={cn(
-              "flex items-center justify-center h-8 w-8 rounded-lg text-xs font-bold",
-              isBullish ? "bg-[#10B981]/10 text-[#10B981]" : "bg-[#F43F5E]/10 text-[#F43F5E]",
+              "flex items-center justify-center h-8 w-8 rounded-lg text-xs font-bold font-mono shrink-0",
+              isBullish ? "bg-[#10B981]/15 text-[#10B981]" : "bg-[#F43F5E]/15 text-[#F43F5E]",
             )}
           >
             {ticker.baseAsset.slice(0, 3)}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-[#E2E8F0]">{ticker.baseAsset}</span>
-            <span className="text-[10px] text-[#64748B]">{ticker.displayName}</span>
+          <div className="flex flex-col text-right">
+            <span className="text-sm font-bold text-[#E2E8F0] font-mono">{ticker.baseAsset}</span>
+            <span className="text-[10px] text-[#64748B] font-mono">{ticker.displayName}</span>
           </div>
         </div>
       </td>
 
-      {/* Price */}
-      <td className="px-4 py-3 text-right">
+      {/* Mark Price */}
+      <td className="px-4 py-3 text-left">
         <span
           className={cn(
             "text-sm font-mono font-semibold transition-colors duration-300",
-            flash === "up" && "text-[#10B981]",
-            flash === "down" && "text-[#F43F5E]",
+            flash === "up" && "text-[#10B981] font-bold",
+            flash === "down" && "text-[#F43F5E] font-bold",
             !flash && "text-[#E2E8F0]",
           )}
         >
@@ -75,46 +87,62 @@ export function ScreenerRow({ ticker, onAnalyze, isSelected }: ScreenerRowProps)
         </span>
       </td>
 
-      {/* 24h Change */}
-      <td className="px-4 py-3 text-right">
+      {/* 24h Change % */}
+      <td className="px-4 py-3 text-left">
         <span
           className={cn(
-            "text-sm font-semibold font-mono",
-            isBullish ? "text-[#10B981]" : "text-[#F43F5E]",
+            "text-sm font-semibold font-mono inline-block px-1.5 py-0.5 rounded",
+            isBullish
+              ? "text-[#10B981] bg-[#10B981]/10"
+              : "text-[#F43F5E] bg-[#F43F5E]/10",
           )}
         >
           {formatPercent(ticker.priceChange24h)}
         </span>
       </td>
 
-      {/* Volume */}
-      <td className="px-4 py-3 text-right">
+      {/* Volume (USDT Millions) */}
+      <td className="px-4 py-3 text-left">
         <span className="text-sm text-[#E2E8F0] font-mono">
           ${formatVolume(ticker.volume24h)}
         </span>
       </td>
 
-      {/* RVOL */}
-      <td className="px-4 py-3 text-right">
+      {/* RVOL Multiplier */}
+      <td className="px-4 py-3 text-left">
         <Badge
           variant={isHighRvol ? "violet" : "default"}
-          className={cn("text-[10px] px-2 py-0.5", isHighRvol && "animate-pulse")}
+          className={cn(
+            "text-[10px] font-mono px-2 py-0.5",
+            isHighRvol && "bg-[#8B5CF6]/20 text-[#8B5CF6] border border-[#8B5CF6]/40",
+          )}
         >
           {ticker.rvol.toFixed(1)}x
         </Badge>
       </td>
 
-      {/* Action */}
+      {/* Action: Analyze Button */}
       <td className="px-4 py-3 text-center">
         <Button
-          variant="outline"
+          variant={isSelected ? "scanner" : "outline"}
           size="sm"
-          className="h-7 px-2.5 text-xs opacity-70 group-hover:opacity-100 transition-opacity"
-          onClick={() => onAnalyze(ticker.symbol)}
+          className="h-7 px-3 text-xs gap-1 font-semibold"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRowClick();
+          }}
         >
-          <BarChart3 className="h-3 w-3" />
-          <span className="hidden sm:inline ml-1">Analyze</span>
-          <ChevronRight className="h-3 w-3 sm:hidden" />
+          {isSelected ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>مُحدد</span>
+            </>
+          ) : (
+            <>
+              <LineChart className="h-3.5 w-3.5" />
+              <span>تحليل</span>
+            </>
+          )}
         </Button>
       </td>
     </tr>
