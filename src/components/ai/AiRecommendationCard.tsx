@@ -255,53 +255,160 @@ export function AiRecommendationCard() {
           </div>
         )}
 
+        {/* ── NO_CLEAR_SETUP: Institutional "Stay in Cash" Amber Card ── */}
+        {!isMarketClosed && rec.status === "NO_CLEAR_SETUP" && (
+          <div className="p-3.5 rounded-xl bg-gradient-to-br from-[#F59E0B]/15 via-[#1E190E] to-[#0A0D12] border border-[#F59E0B]/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-[#F59E0B]/20 text-[#F59E0B]">
+                  <ShieldAlert className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#F59E0B] block">
+                    قرار مدير المخاطر: البقاء كاش خارج السوق (STAY IN CASH)
+                  </span>
+                  <span className="text-[10px] text-[#94A3B8]">
+                    حماية رأس المال — السوق في حالة تشتت أو سيولة غير مؤكدة
+                  </span>
+                </div>
+              </div>
+              <Badge variant="warning" className="text-[10px] font-bold">
+                عدم تداول
+              </Badge>
+            </div>
+
+            {/* Quantitative Diagnostics Matrix */}
+            {rec.quant_matrix && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#080C14]/90 p-2.5 rounded-lg border border-[#1E293B] text-[11px] font-mono">
+                <div>
+                  <span className="text-[#64748B] text-[9px] block">الاتجاه (1H Trend):</span>
+                  <span
+                    className={`font-bold ${
+                      rec.quant_matrix.trend === "STRONG_BULLISH"
+                        ? "text-[#10B981]"
+                        : rec.quant_matrix.trend === "STRONG_BEARISH"
+                          ? "text-[#F43F5E]"
+                          : "text-[#F59E0B]"
+                    }`}
+                  >
+                    {rec.quant_matrix.trend === "STRONG_BULLISH"
+                      ? "صاعد قوي ↗"
+                      : rec.quant_matrix.trend === "STRONG_BEARISH"
+                        ? "هابط قوي ↘"
+                        : "عرضي متذبذب ↔"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#64748B] text-[9px] block">حجم السيولة (RVOL):</span>
+                  <span
+                    className={`font-bold ${
+                      rec.quant_matrix.rvol >= 1.2 ? "text-[#10B981]" : "text-[#F43F5E]"
+                    }`}
+                  >
+                    {rec.quant_matrix.rvol.toFixed(2)}x {rec.quant_matrix.rvol < 1.2 ? "(ضعيف)" : "(مؤكد)"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#64748B] text-[9px] block">تقلب الـ ATR (15M):</span>
+                  <span className="text-[#06B6D4] font-bold">
+                    ${formatPrice(rec.quant_matrix.atr14)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#64748B] text-[9px] block">نطاق السوينغ (20 شمعة):</span>
+                  <span className="text-[#E2E8F0] font-bold">
+                    ${formatPrice(rec.quant_matrix.lowestLow20)} - ${formatPrice(rec.quant_matrix.highestHigh20)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Arabic Rejection Reasoning */}
+            <div className="p-2.5 rounded-lg bg-[#080C14]/80 border border-[#F59E0B]/20 text-xs">
+              <span className="text-[10px] text-[#F59E0B] font-bold block mb-1">
+                سبب الامتناع المؤسساتي عن الدخول:
+              </span>
+              <p className="text-[#E2E8F0] text-[11px] leading-relaxed">
+                {rec.reasoning_arabic}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8] bg-[#0A0D12] p-2 rounded-lg border border-[#1E293B]">
+              <ShieldCheck className="h-3.5 w-3.5 text-[#10B981] shrink-0" />
+              <span>القاعدة الذهبية: في 80% - 90% من ظروف السوق، الامتناع عن التداول هو العامل الأساسي لنمو المحفظة.</span>
+            </div>
+          </div>
+        )}
+
         {/* Trade Levels (Only show if clear setup) */}
         {!isNoTrade && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Entry Price */}
-            <div className="bg-[#080C14] p-2 rounded-xl border border-[#1E293B]">
-              <span className="text-[10px] text-[#64748B] block mb-0.5">سعر الدخول المقترح</span>
-              <span className="text-xs font-mono font-bold text-[#E2E8F0]">
-                ${formatPrice(rec.entry_price)}
-              </span>
-            </div>
+          <div className="space-y-2">
+            {/* Quantitative Indicator Pills */}
+            {rec.quant_matrix && (
+              <div className="flex items-center justify-between bg-[#080C14] px-2.5 py-1.5 rounded-lg border border-[#1E293B] text-[10px] font-mono">
+                <span className="text-[#64748B]">
+                  الاتجاه:{" "}
+                  <strong className={rec.quant_matrix.trend === "STRONG_BULLISH" ? "text-[#10B981]" : "text-[#F43F5E]"}>
+                    {rec.quant_matrix.trend}
+                  </strong>
+                </span>
+                <span className="text-[#64748B]">
+                  RVOL: <strong className="text-[#10B981]">{rec.quant_matrix.rvol.toFixed(2)}x</strong>
+                </span>
+                <span className="text-[#64748B]">
+                  ATR: <strong className="text-[#06B6D4]">${formatPrice(rec.quant_matrix.atr14)}</strong>
+                </span>
+              </div>
+            )}
 
-            {/* Stop Loss */}
-            <div className="bg-[#080C14] p-2 rounded-xl border border-[#F43F5E]/30">
-              <span className="text-[10px] text-[#F43F5E] block mb-0.5 font-semibold">وقف الخسارة (SL)</span>
-              <span className="text-xs font-mono font-bold text-[#F43F5E]">
-                ${formatPrice(rec.stop_loss)}
-              </span>
-            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Entry Price */}
+              <div className="bg-[#080C14] p-2 rounded-xl border border-[#1E293B]">
+                <span className="text-[10px] text-[#64748B] block mb-0.5">سعر الدخول المقترح</span>
+                <span className="text-xs font-mono font-bold text-[#E2E8F0]">
+                  ${formatPrice(rec.entry_price)}
+                </span>
+              </div>
 
-            {/* Take Profit 1 */}
-            <div className="bg-[#080C14] p-2 rounded-xl border border-[#10B981]/30">
-              <span className="text-[10px] text-[#10B981] block mb-0.5 font-semibold">الهدف الأول (TP1)</span>
-              <span className="text-xs font-mono font-bold text-[#10B981]">
-                ${formatPrice(rec.take_profit_1)}
-              </span>
-            </div>
+              {/* Stop Loss */}
+              <div className="bg-[#080C14] p-2 rounded-xl border border-[#F43F5E]/30">
+                <span className="text-[10px] text-[#F43F5E] block mb-0.5 font-semibold">وقف الخسارة (1.5*ATR)</span>
+                <span className="text-xs font-mono font-bold text-[#F43F5E]">
+                  ${formatPrice(rec.stop_loss)}
+                </span>
+              </div>
 
-            {/* Risk/Reward */}
-            <div className="bg-[#080C14] p-2 rounded-xl border border-[#8B5CF6]/30">
-              <span className="text-[10px] text-[#8B5CF6] block mb-0.5 font-semibold">العائد للمخاطرة (R:R)</span>
-              <span className="text-xs font-mono font-bold text-[#8B5CF6]">
-                {rec.risk_reward_ratio}
-              </span>
+              {/* Take Profit 1 */}
+              <div className="bg-[#080C14] p-2 rounded-xl border border-[#10B981]/30">
+                <span className="text-[10px] text-[#10B981] block mb-0.5 font-semibold">الهدف الأول (2.0*ATR)</span>
+                <span className="text-xs font-mono font-bold text-[#10B981]">
+                  ${formatPrice(rec.take_profit_1)}
+                </span>
+              </div>
+
+              {/* Risk/Reward */}
+              <div className="bg-[#080C14] p-2 rounded-xl border border-[#8B5CF6]/30">
+                <span className="text-[10px] text-[#8B5CF6] block mb-0.5 font-semibold">العائد للمخاطرة (R:R)</span>
+                <span className="text-xs font-mono font-bold text-[#8B5CF6]">
+                  {rec.risk_reward_ratio}
+                </span>
+              </div>
             </div>
           </div>
         )}
 
         {/* Technical Reasoning in Arabic */}
-        <div className="bg-[#080C14]/90 p-2.5 rounded-xl border border-[#1E293B]">
-          <span className="text-[10px] text-[#8B5CF6] font-bold block mb-1 flex items-center gap-1">
-            <Layers className="h-3 w-3" />
-            التحليل الفني المؤسساتي (SMC Reasoning):
-          </span>
-          <p className="text-xs text-[#CBD5E1] leading-relaxed font-sans">
-            {rec.reasoning_arabic}
-          </p>
-        </div>
+        {!isNoTrade && (
+          <div className="bg-[#080C14]/90 p-2.5 rounded-xl border border-[#1E293B]">
+            <span className="text-[10px] text-[#8B5CF6] font-bold block mb-1 flex items-center gap-1">
+              <Layers className="h-3 w-3" />
+              التحليل الفني المؤسساتي (Quantitative Reasoning):
+            </span>
+            <p className="text-xs text-[#CBD5E1] leading-relaxed font-sans">
+              {rec.reasoning_arabic}
+            </p>
+          </div>
+        )}
 
         {/* 🎯 Bullet Strategy Section (استراتيجية بولت) */}
         {rec.bullet_signal && (

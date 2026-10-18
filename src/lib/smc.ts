@@ -166,15 +166,16 @@ export function determineHtfBias(candles: CandleData[]): "BULLISH" | "BEARISH" |
 }
 
 /** Synthetic Gold Candles generator for XAU/USD when direct exchange klines are inaccessible */
-export function generateSyntheticGoldKlines(basePrice = 2685.50, count = 30): CandleData[] {
+export function generateSyntheticGoldKlines(basePrice = 2687.50, count = 30): CandleData[] {
   const klines: CandleData[] = [];
   let current = basePrice - 15;
   const now = Date.now();
 
   for (let i = 0; i < count; i++) {
+    const isLast = i === count - 1;
     const noise = (Math.sin(i * 0.3) * 4) + (Math.random() - 0.45) * 6;
     const open = current;
-    const close = open + noise;
+    const close = isLast ? basePrice : open + noise;
     const high = Math.max(open, close) + Math.random() * 3.5;
     const low = Math.min(open, close) - Math.random() * 3.5;
     current = close;

@@ -98,6 +98,31 @@ export interface BulletSignal {
   reasoning_arabic?: string;
 }
 
+/** Deterministic Quantitative Metrics computed mathematically in TypeScript */
+export interface QuantMatrix {
+  currentLivePrice: number;
+  trend: "STRONG_BULLISH" | "STRONG_BEARISH" | "CHOPPY_SIDEWAYS";
+  ema50: number;
+  ema200: number;
+  atr14: number;
+  rvol: number;
+  volumeStatus: "CONFIRMED_LIQUIDITY" | "LOW_LIQUIDITY";
+  highestHigh20: number;
+  lowestLow20: number;
+  longLevels: {
+    mathSl: number;
+    mathTp1: number;
+    mathTp2: number;
+    riskRewardRatio: string;
+  };
+  shortLevels: {
+    mathSl: number;
+    mathTp1: number;
+    mathTp2: number;
+    riskRewardRatio: string;
+  };
+}
+
 /** AI Trade Recommendation Schema (Strict Output) */
 export interface AiTradeRecommendation {
   status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
@@ -115,6 +140,7 @@ export interface AiTradeRecommendation {
   model_used?: string;
   timestamp: number;
   bullet_signal?: BulletSignal;
+  quant_matrix?: QuantMatrix;
 }
 
 /** Trade History Journal Entry */
