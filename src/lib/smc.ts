@@ -2,9 +2,9 @@
 // NEXUS ALPHA — Smart Money Concepts (SMC) & Multi-Timeframe Engine
 // ═══════════════════════════════════════════════════════════════════════════
 
-import type { CandleData, SmcMetrics, AiTradeRecommendation, MarketTab, TradeMode } from "./types";
+import type { CandleData, SmcMetrics, AiTradeRecommendation, TradeMode } from "./types";
 
-interface RawKline extends Array<string | number> {}
+type RawKline = (string | number)[];
 
 /** Parse Binance raw kline array to typed CandleData */
 export function parseKlines(raw: RawKline[]): CandleData[] {

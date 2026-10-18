@@ -88,7 +88,7 @@ export function SavedSignalsModal() {
               <FolderBookmark className="h-10 w-10 text-[#1E293B]" />
               <p className="font-bold text-[#E2E8F0] text-sm">لا توجد توصيات محفوظة حتى الآن</p>
               <p className="max-w-xs leading-relaxed">
-                اضغط على زر <span className="text-[#8B5CF6] font-bold">"📌 حفظ التوصية في قاعدة البيانات"</span> في بطاقة التحليل بالذكاء الاصطناعي لحفظ أي فرصة تداول هنا للرجوع إليها دائماً.
+                اضغط على زر <span className="text-[#8B5CF6] font-bold">&quot;📌 حفظ التوصية في قاعدة البيانات&quot;</span> في بطاقة التحليل بالذكاء الاصطناعي لحفظ أي فرصة تداول هنا للرجوع إليها دائماً.
               </p>
             </div>
           ) : (
