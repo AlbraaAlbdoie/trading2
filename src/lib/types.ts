@@ -100,8 +100,9 @@ export interface BulletSignal {
 
 /** AI Trade Recommendation Schema (Strict Output) */
 export interface AiTradeRecommendation {
-  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
+  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
   confidence_score: number;
+  confluence_score?: number;
   symbol: string;
   timeframe_confluence: string;
   entry_price: number;
@@ -146,7 +147,7 @@ export interface SavedSignalItem {
   id: string;
   user_id: string;
   symbol: string;
-  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
+  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
   entry_price: number;
   stop_loss: number;
   take_profit_1: number;
@@ -170,6 +171,7 @@ export interface AiAnalysisRequest {
   symbol: string;
   market: MarketTab;
   tradeMode: TradeMode;
+  currentPrice?: number;
   apiSettings?: Partial<ApiSettingsConfig>;
 }
 

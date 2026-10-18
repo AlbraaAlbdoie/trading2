@@ -25,6 +25,7 @@ import {
   Loader2,
   Database,
   Crosshair,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -126,26 +127,31 @@ export function AiRecommendationCard() {
 
   const isLong = rec.status === "LONG" || rec.status === "SPOT_BUY";
   const isShort = rec.status === "SHORT";
-  const isNoTrade = rec.status === "NO_CLEAR_SETUP";
+  const isMarketClosed = rec.status === "MARKET_CLOSED";
+  const isNoTrade = rec.status === "NO_CLEAR_SETUP" || isMarketClosed;
 
   return (
     <Card
       className={`relative overflow-hidden transition-all duration-300 ${
-        isNoTrade
-          ? "border-[#F59E0B]/40 bg-gradient-to-b from-[#12161A] to-[#0A0D12]"
-          : isLong
-            ? "border-[#10B981]/40 bg-gradient-to-b from-[#0F1E19] to-[#0A0D12] shadow-lg shadow-emerald-500/10"
-            : "border-[#F43F5E]/40 bg-gradient-to-b from-[#1F1116] to-[#0A0D12] shadow-lg shadow-rose-500/10"
+        isMarketClosed
+          ? "border-[#F59E0B]/50 bg-gradient-to-b from-[#1C150A] to-[#0A0D12] shadow-lg shadow-amber-500/10"
+          : isNoTrade
+            ? "border-[#F59E0B]/40 bg-gradient-to-b from-[#12161A] to-[#0A0D12]"
+            : isLong
+              ? "border-[#10B981]/40 bg-gradient-to-b from-[#0F1E19] to-[#0A0D12] shadow-lg shadow-emerald-500/10"
+              : "border-[#F43F5E]/40 bg-gradient-to-b from-[#1F1116] to-[#0A0D12] shadow-lg shadow-rose-500/10"
       }`}
     >
       {/* Top Accent Stripe */}
       <div
         className={`h-1 w-full ${
-          isNoTrade
-            ? "bg-[#F59E0B]"
-            : isLong
-              ? "bg-[#10B981]"
-              : "bg-[#F43F5E]"
+          isMarketClosed
+            ? "bg-gradient-to-r from-[#F59E0B] via-[#F43F5E] to-[#F59E0B]"
+            : isNoTrade
+              ? "bg-[#F59E0B]"
+              : isLong
+                ? "bg-[#10B981]"
+                : "bg-[#F43F5E]"
         }`}
       />
 
@@ -154,14 +160,18 @@ export function AiRecommendationCard() {
           <div className="flex items-center gap-2">
             <div
               className={`p-1.5 rounded-lg ${
-                isNoTrade
+                isMarketClosed
                   ? "bg-[#F59E0B]/20 text-[#F59E0B]"
-                  : isLong
-                    ? "bg-[#10B981]/20 text-[#10B981]"
-                    : "bg-[#F43F5E]/20 text-[#F43F5E]"
+                  : isNoTrade
+                    ? "bg-[#F59E0B]/20 text-[#F59E0B]"
+                    : isLong
+                      ? "bg-[#10B981]/20 text-[#10B981]"
+                      : "bg-[#F43F5E]/20 text-[#F43F5E]"
               }`}
             >
-              {isNoTrade ? (
+              {isMarketClosed ? (
+                <AlertTriangle className="h-4 w-4" />
+              ) : isNoTrade ? (
                 <ShieldAlert className="h-4 w-4" />
               ) : isLong ? (
                 <TrendingUp className="h-4 w-4" />
@@ -175,17 +185,22 @@ export function AiRecommendationCard() {
                   {rec.symbol}
                 </span>
                 {/* Status Badge */}
-                {isLong && (
+                {isMarketClosed && (
+                  <Badge variant="warning" className="text-[10px] font-bold bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40 animate-pulse">
+                    سوق مغلق (عطلة نهاية الأسبوع)
+                  </Badge>
+                )}
+                {!isMarketClosed && isLong && (
                   <Badge variant="bullish" className="text-[10px] font-bold">
                     {rec.status === "SPOT_BUY" ? "تجميع سبوت (SPOT BUY)" : "شراء (LONG)"}
                   </Badge>
                 )}
-                {isShort && (
+                {!isMarketClosed && isShort && (
                   <Badge variant="bearish" className="text-[10px] font-bold">
                     بيع (SHORT)
                   </Badge>
                 )}
-                {isNoTrade && (
+                {!isMarketClosed && isNoTrade && (
                   <Badge variant="warning" className="text-[10px] font-bold animate-pulse">
                     البقاء خارج السوق (STAY IN CASH)
                   </Badge>
@@ -203,11 +218,13 @@ export function AiRecommendationCard() {
             <span className="text-[10px] text-[#64748B]">نسبة الثقة:</span>
             <span
               className={`text-sm font-bold font-mono ${
-                rec.confidence_score >= 75
-                  ? "text-[#10B981]"
-                  : rec.confidence_score >= 50
-                    ? "text-[#F59E0B]"
-                    : "text-[#F43F5E]"
+                isMarketClosed
+                  ? "text-[#64748B]"
+                  : rec.confidence_score >= 75
+                    ? "text-[#10B981]"
+                    : rec.confidence_score >= 50
+                      ? "text-[#F59E0B]"
+                      : "text-[#F43F5E]"
               }`}
             >
               {rec.confidence_score}%
@@ -217,8 +234,21 @@ export function AiRecommendationCard() {
       </CardHeader>
 
       <CardContent className="p-3.5 pt-1 space-y-3">
+        {/* Market Closed Banner Notice */}
+        {isMarketClosed && (
+          <div className="p-3 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 space-y-1">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#F59E0B]">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>تنبيه حارس عطلة السوق (Market Guard):</span>
+            </div>
+            <p className="text-[11px] text-[#CBD5E1] leading-relaxed">
+              {rec.reasoning_arabic}
+            </p>
+          </div>
+        )}
+
         {/* BTC Dump Alert if Present */}
-        {rec.btc_warning && (
+        {!isMarketClosed && rec.btc_warning && (
           <div className="flex items-center gap-1.5 p-2 rounded-lg bg-[#F43F5E]/15 border border-[#F43F5E]/30 text-xs text-[#F43F5E] font-semibold">
             <ShieldAlert className="h-4 w-4 shrink-0" />
             <span>{rec.btc_warning}</span>

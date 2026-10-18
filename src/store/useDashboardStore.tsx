@@ -259,7 +259,7 @@ interface StoreContextType {
   setIsSettingsOpen: (open: boolean) => void;
   setApiSettings: (settings: ApiSettingsConfig) => void;
   setAiRecommendation: (rec: AiTradeRecommendation | null) => void;
-  runAiAnalysis: (targetSymbol?: string) => Promise<void>;
+  runAiAnalysis: (targetSymbol?: string, explicitCurrentPrice?: number) => Promise<void>;
   runAutoAlphaScan: () => Promise<void>;
   setIsJournalOpen: (open: boolean) => void;
   updateTradeOutcome: (id: string, outcome: TradeOutcome) => void;
@@ -663,9 +663,27 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [addToast]);
 
   const runAiAnalysis = useCallback(
-    async (targetSymbol?: string) => {
+    async (targetSymbol?: string, explicitCurrentPrice?: number) => {
       const symbolToAnalyze = targetSymbol || state.selectedSymbol;
       if (!symbolToAnalyze) return;
+
+      // Determine live current price to send
+      let currentPrice = explicitCurrentPrice;
+      if (typeof currentPrice !== "number" || currentPrice <= 0) {
+        if (
+          state.activeMarket === "gold" ||
+          symbolToAnalyze === "XAUUSD" ||
+          symbolToAnalyze === "XAU/USD" ||
+          symbolToAnalyze.includes("XAU")
+        ) {
+          currentPrice = state.goldTicker ? state.goldTicker.price : 2687.50;
+        } else {
+          const coin = state.tickers.find((t) => t.symbol === symbolToAnalyze);
+          if (coin) {
+            currentPrice = coin.markPrice;
+          }
+        }
+      }
 
       dispatch({ type: "SET_AI_ANALYZING", payload: true });
 
@@ -677,6 +695,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             symbol: symbolToAnalyze,
             market: state.activeMarket,
             tradeMode: state.tradeMode,
+            currentPrice,
             apiSettings: state.apiSettings,
           }),
         });
@@ -687,7 +706,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           recordTradeSignal(recommendation);
 
           if (state.audioEnabled) {
-            playTradeChime(recommendation.status === "NO_CLEAR_SETUP" ? "low" : "high");
+            playTradeChime(
+              recommendation.status === "NO_CLEAR_SETUP" || recommendation.status === "MARKET_CLOSED"
+                ? "low"
+                : "high",
+            );
           }
         } else {
           addToast("تعذر استجابة خادم التحليل الذكي، جرب مجدداً", "error");
@@ -699,7 +722,17 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "SET_AI_ANALYZING", payload: false });
       }
     },
-    [state.selectedSymbol, state.activeMarket, state.tradeMode, state.apiSettings, state.audioEnabled, recordTradeSignal, addToast],
+    [
+      state.selectedSymbol,
+      state.activeMarket,
+      state.tradeMode,
+      state.goldTicker?.price,
+      state.tickers,
+      state.apiSettings,
+      state.audioEnabled,
+      recordTradeSignal,
+      addToast,
+    ],
   );
 
   const runAutoAlphaScan = useCallback(async () => {
@@ -736,6 +769,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
               symbol: coin.symbol,
               market: "crypto",
               tradeMode: state.tradeMode,
+              currentPrice: coin.markPrice,
               apiSettings: state.apiSettings,
             }),
           });

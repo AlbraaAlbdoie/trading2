@@ -15,6 +15,7 @@ import {
   generateAlgorithmicSmcRecommendation,
 } from "@/lib/smc";
 import { calculateBulletSignal } from "@/lib/bulletStrategy";
+import { isGoldMarketWeekendClosed } from "@/lib/utils";
 import type {
   AiAnalysisRequest,
   AiTradeRecommendation,
@@ -29,14 +30,17 @@ const SYSTEM_SMC_PROMPT = `أنت خبير ومدير مخاطر أول في ت�
 القواعد الصارمة الإلزامية:
 1. Multi-Timeframe Alignment: يجب أن يتطابق اتجاه الدخول في فريم 15M مع الاتجاه العام في فريم 1H تماماً.
 2. Strict Risk/Reward: يجب أن تكون نسبة العائد إلى المخاطرة (R:R) 1:2 كحد أدنى مطلق (الهدف الأول ضعف وقف الخسارة).
-3. القاعدة الذهبية (GOLDEN RULE) - سياسة عدم التداول (NO-TRADE POLICY):
+3. Strict Live Price Synchronization (مزامنة السعر اللحظي):
+   - Rule: entry_price MUST be within 0.1% of the provided live_current_price. Do NOT hallucinate or guess historical prices.
+   - All Stop Loss and Take Profit levels MUST be derived strictly relative to this exact live_current_price.
+4. القاعدة الذهبية (GOLDEN RULE) - سياسة عدم التداول (NO-TRADE POLICY):
    إذا كان السوق متذبذباً عرضياً، أو مشتتاً، أو ممتداً بشكل مفرط (Overextended)، أو يفتقر لتطابق واضح في مفاهيم SMC (غياب FVG أو Order Block واضح)، يجب فوراً وبشكل قاطع إرجاع:
    status: "NO_CLEAR_SETUP"
    وتقديم النصح باللغة العربية بـ "البقاء خارج السوق (Stay in Cash)".
 
 يجب إرجاع النتيجة بتنسيق JSON خالص وصحيح فقط بدون أي علامات markdown أو نصوص إضافية:
 {
-  "status": "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP",
+  "status": "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED",
   "confidence_score": 82,
   "symbol": "BTCUSDT",
   "timeframe_confluence": "1H Bullish OB + 15M FVG Sweep",
@@ -158,10 +162,43 @@ export async function POST(req: Request) {
     const body: AiAnalysisRequest = await req.json();
     const { symbol, market, tradeMode, apiSettings } = body;
 
+    const isGold =
+      market === "gold" ||
+      symbol === "XAUUSD" ||
+      symbol === "XAU/USD" ||
+      symbol.toUpperCase().includes("XAU");
+
+    // ── Bug 1: Gold Market Weekend Closure Guard ─────────────────────────
+    // Fact: Gold (Forex) closes from Friday 21:00 UTC to Sunday 22:00 UTC
+    if (isGold && isGoldMarketWeekendClosed()) {
+      return NextResponse.json({
+        status: "MARKET_CLOSED",
+        confidence_score: 0,
+        confluence_score: 0,
+        symbol: "XAUUSD",
+        timeframe_confluence: "عطلة نهاية الأسبوع (سوق مغلق)",
+        entry_price: 0,
+        stop_loss: 0,
+        take_profit_1: 0,
+        take_profit_2: 0,
+        risk_reward_ratio: "0:0",
+        reasoning_arabic:
+          "⚠️ سوق الذهب العالمي مغلق حالياً بسبب عطلة نهاية الأسبوع (السبت والأحد). يفتح السوق مساء اليوم الأحد الساعة 11:00 مساءً بتوقيت مكة.",
+        btc_warning: "سوق الذهب مغلق",
+        model_used: "Gold Market Guard",
+        timestamp: Date.now(),
+      });
+    }
+
     const selectedModel: AiModelOption = apiSettings?.selectedModel || "gemini-2.0-flash";
     const geminiKey = apiSettings?.geminiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
     const groqKey = apiSettings?.groqKey || process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
     const openRouterKey = apiSettings?.openRouterKey || process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
+
+    const rawProvidedPrice =
+      typeof body.currentPrice === "number" && body.currentPrice > 0
+        ? body.currentPrice
+        : null;
 
     // 1. Dual Timeframe Data Assembly
     let candles1h: CandleData[] = [];
@@ -170,9 +207,10 @@ export async function POST(req: Request) {
     let openInterestChange1h = 0;
     let btcDumpRisk = false;
 
-    if (market === "gold" || symbol === "XAUUSD" || symbol.includes("XAU")) {
-      candles1h = generateSyntheticGoldKlines(2685.50, 30);
-      candles15m = generateSyntheticGoldKlines(2685.50, 40);
+    if (isGold) {
+      const goldBase = rawProvidedPrice || 2687.50;
+      candles1h = generateSyntheticGoldKlines(goldBase, 30);
+      candles15m = generateSyntheticGoldKlines(goldBase, 40);
     } else {
       const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       try {
@@ -188,12 +226,19 @@ export async function POST(req: Request) {
         }
       } catch (binanceErr) {
         console.warn("[API] Binance direct fetch fallback:", binanceErr);
-        candles1h = generateSyntheticGoldKlines(100, 30);
-        candles15m = generateSyntheticGoldKlines(100, 40);
+        const fallbackPrice = rawProvidedPrice || 100;
+        candles1h = generateSyntheticGoldKlines(fallbackPrice, 30);
+        candles15m = generateSyntheticGoldKlines(fallbackPrice, 40);
       }
     }
 
-    // 2. Compute SMC Metrics
+    // 2. Determine Precise Live Price
+    const latest15m = candles15m[candles15m.length - 1];
+    const latest1h = candles1h[candles1h.length - 1];
+    const liveCurrentPrice =
+      rawProvidedPrice || (latest15m ? latest15m.close : isGold ? 2687.50 : 100);
+
+    // 3. Compute SMC Metrics
     const htfBias = determineHtfBias(candles1h);
     const recentFvg = detectFvg(candles15m);
     const orderBlock = detectOrderBlock(candles15m);
@@ -209,30 +254,35 @@ export async function POST(req: Request) {
       btcDumpRisk,
     };
 
-    // 3. Compute Bullet Strategy Signal (استراتيجية بولت)
+    // 4. Compute Bullet Strategy Signal (استراتيجية بولت)
     const bulletSignal = calculateBulletSignal(candles15m);
 
-    // 4. Check for immediate BTC dump guard rule before querying AI
-    if (btcDumpRisk) {
+    // 5. Check for immediate BTC dump guard rule before querying AI
+    if (btcDumpRisk && !isGold) {
       const btcAlertRec = generateAlgorithmicSmcRecommendation(
         symbol,
         candles1h,
         candles15m,
         smcMetrics,
         tradeMode,
+        liveCurrentPrice,
       );
       btcAlertRec.model_used = "BTC Dump Guard Engine";
       btcAlertRec.bullet_signal = bulletSignal;
       return NextResponse.json(btcAlertRec);
     }
 
-    // 5. Construct AI Prompt Payload
-    const latest15m = candles15m[candles15m.length - 1];
-    const latest1h = candles1h[candles1h.length - 1];
-
+    // 6. Construct AI Prompt Payload with Strict Price Synchronization
     const userPrompt = `
-بيانات التداول للأصل: ${symbol} (${market === "gold" ? "الذهب الفوري" : tradeMode === "futures" ? "العقود الآجلة" : "سوق سبوت"})
-السعر الحالي: ${latest15m ? latest15m.close : 0}
+بيانات التداول للأصل: ${symbol} (${isGold ? "الذهب الفوري (XAU/USD)" : tradeMode === "futures" ? "العقود الآجلة" : "سوق سبوت"})
+السعر اللحظي الفعلي المباشر (live_current_price): ${liveCurrentPrice}
+
+*** قاعدة صارمة لمزامنة السعر (Live Price Synchronization):
+- السعر اللحظي الفعلي الآن هو بالضبط: ${liveCurrentPrice}.
+- يجب أن يكون entry_price مطابقاً للسعر اللحظي ضمن هامش 0.1% فقط (بين ${(liveCurrentPrice * 0.999).toFixed(2)} و ${(liveCurrentPrice * 1.001).toFixed(2)}).
+- يمنع تماماً تخمين أو استرجاع أسعار قديمة أو تاريخية.
+- يجب اشتقاق مستويات stop_loss و take_profit_1 و take_profit_2 بدقة متناهية انطلاقاً من السعر اللحظي الفعلي (${liveCurrentPrice}). ***
+
 بيانات إطار 1 ساعة (HTF):
 - الاتجاه العام (HTF Bias): ${htfBias}
 - أعلى سعر 1H: ${latest1h?.high || 0} | أدنى سعر 1H: ${latest1h?.low || 0}
@@ -242,7 +292,7 @@ export async function POST(req: Request) {
 - كتل الأوامر (Order Block): نوع ${orderBlock.type} عند مستوى [${orderBlock.low} - ${orderBlock.high}]
 - الفجوة السعرية (FVG): نوع ${recentFvg.type} عند نطاق [${recentFvg.bottom} - ${recentFvg.top}]
 - آخر 5 إغلاقات 15M: ${candles15m.slice(-5).map((c) => c.close).join(", ")}
-${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${fundingRate.toFixed(4)}% | تغير الفائدة المفتوحة 1h: +${openInterestChange1h}%` : ""}
+${tradeMode === "futures" && !isGold ? `- معدل التمويل (Funding Rate): ${fundingRate.toFixed(4)}% | تغير الفائدة المفتوحة 1h: +${openInterestChange1h}%` : ""}
 - حالة البيتكوين: ${btcDumpRisk ? "خطر هبوط سريع" : "مستقر آمن للتداول"}
 
 بيانات استراتيجية بولت (Bullet Strategy Indicator):
@@ -253,10 +303,10 @@ ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${funding
 - الهدف المحسوب باستراتيجية بولت: ${bulletSignal.targetPrice ? "$" + bulletSignal.targetPrice : "غير محدد"}
 - ملخص بولت: ${bulletSignal.reasoning_arabic || "لا يوجد"}
 
-المطلوب: أخرج كائن JSON بالهيكل المحدد فقط مع الأخذ بالاعتبار توافق مفاهيم SMC مع إشارة استراتيجية بولت. إذا كانت الشروط غير مكتملة بنسبة 100%، التزم بالقاعدة الذهبية واجعل status: "NO_CLEAR_SETUP".
+المطلوب: أخرج كائن JSON بالهيكل المحدد فقط مع الالتزام الصارم بالسعر اللحظي ${liveCurrentPrice}. إذا كانت الشروط غير مكتملة بنسبة 100%، التزم بالقاعدة الذهبية واجعل status: "NO_CLEAR_SETUP".
 `;
 
-    // 6. Multi-Provider Call with Algorithmic Fallback
+    // 7. Multi-Provider Call with Algorithmic Fallback
     let rawAiResponse = "";
     let modelName = "";
 
@@ -293,6 +343,22 @@ ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${funding
       parsed.model_used = modelName;
       parsed.timestamp = Date.now();
       parsed.bullet_signal = bulletSignal;
+
+      // Price Hallucination Guard: Ensure entry_price aligns with liveCurrentPrice
+      if (
+        liveCurrentPrice > 0 &&
+        parsed.status !== "NO_CLEAR_SETUP" &&
+        parsed.status !== "MARKET_CLOSED" &&
+        parsed.entry_price > 0 &&
+        Math.abs(parsed.entry_price - liveCurrentPrice) / liveCurrentPrice > 0.01
+      ) {
+        const ratio = liveCurrentPrice / parsed.entry_price;
+        parsed.entry_price = Math.round(liveCurrentPrice * 100) / 100;
+        parsed.stop_loss = Math.round(parsed.stop_loss * ratio * 100) / 100;
+        parsed.take_profit_1 = Math.round(parsed.take_profit_1 * ratio * 100) / 100;
+        parsed.take_profit_2 = Math.round(parsed.take_profit_2 * ratio * 100) / 100;
+      }
+
       return NextResponse.json(parsed);
     } catch (aiCallErr) {
       console.warn("[API] AI provider call encountered error, activating Quant SMC fallback:", aiCallErr);
@@ -302,6 +368,7 @@ ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${funding
         candles15m,
         smcMetrics,
         tradeMode,
+        liveCurrentPrice,
       );
       fallbackRec.model_used = `Quant SMC Engine (${modelName || "محرك الطوارئ الذكي"})`;
       fallbackRec.bullet_signal = bulletSignal;

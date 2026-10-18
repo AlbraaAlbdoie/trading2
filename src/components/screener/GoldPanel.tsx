@@ -13,12 +13,13 @@ import {
   Clock,
   Shield,
   Layers,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDashboardStore } from "@/store/useDashboardStore";
-import { cn, formatPrice, formatPercent } from "@/lib/utils";
+import { cn, formatPrice, formatPercent, isGoldMarketWeekendClosed, getForexMarketSessions } from "@/lib/utils";
 import type { GoldTickerData } from "@/lib/types";
 
 function useGoldPrice(): GoldTickerData {
@@ -58,9 +59,24 @@ export function GoldPanel() {
   const gold = useGoldPrice();
   const { runAiAnalysis, setSelectedSymbol } = useDashboardStore();
   const isBullish = gold.change24h >= 0;
+  const isWeekendClosed = isGoldMarketWeekendClosed();
+  const sessions = getForexMarketSessions();
 
   return (
     <div className="flex flex-col h-full overflow-y-auto p-4 gap-4 bg-[#080C14]">
+      {/* Weekend Closure Warning Banner */}
+      {isWeekendClosed && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-xs text-[#F59E0B] animate-pulse">
+          <AlertTriangle className="h-5 w-5 text-[#F59E0B] shrink-0" />
+          <div>
+            <span className="font-bold block">⚠️ سوق الذهب العالمي مغلق حالياً (عطلة نهاية الأسبوع)</span>
+            <span className="text-[11px] text-[#CBD5E1]">
+              يغلق سوق الفوركس والذهب من مساء الجمعة 21:00 UTC ويعاود الافتتاح مساء الأحد 22:00 UTC (11:00 مساءً بتوقيت مكة).
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Main Gold Price Card */}
       <Card className="border-[#F59E0B]/30 bg-gradient-to-br from-[#0F1419] via-[#1A1408] to-[#0F1419] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#F59E0B]/10 rounded-full blur-3xl pointer-events-none" />
@@ -72,11 +88,11 @@ export function GoldPanel() {
               </div>
               <div>
                 <span className="text-[#F59E0B] font-bold">أونصة الذهب الفورية — XAU/USD</span>
-                <p className="text-[10px] text-[#64748B]">مؤشر تسعير الذهب العالمي مقابل الدولار الأمريكي</p>
+                <p className="text-[10px] text-[#64748B]">مؤشر تسعير الذهب العالمي مقابل الدولار الأمريكي (TVC:GOLD)</p>
               </div>
             </div>
             <Badge variant="gold" className="text-[10px] font-bold">
-              بث حي
+              {isWeekendClosed ? "مغلق (عطلة)" : "بث حي"}
             </Badge>
           </CardTitle>
         </CardHeader>
@@ -112,9 +128,9 @@ export function GoldPanel() {
             size="sm"
             onClick={() => {
               setSelectedSymbol("XAUUSD");
-              runAiAnalysis("XAUUSD");
+              runAiAnalysis("XAUUSD", gold.price);
             }}
-            className="w-full font-bold text-xs"
+            className="w-full font-bold text-xs cursor-pointer"
           >
             ⚡ تحليل الذهب الفوري (XAU/USD) بنظام الذكاء الاصطناعي المؤسساتي
           </Button>
@@ -131,11 +147,11 @@ export function GoldPanel() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <LevelRow label="مقاومة رئيسية (R2)" price={2725.00} type="resistance" />
-            <LevelRow label="مقاومة أولى (R1)" price={2700.00} type="resistance" />
+            <LevelRow label="مقاومة رئيسية (R2)" price={2725.0} type="resistance" />
+            <LevelRow label="مقاومة أولى (R1)" price={2700.0} type="resistance" />
             <LevelRow label="السعر الفوري الحالي" price={gold.price} type="current" />
-            <LevelRow label="دعم أول (S1)" price={2665.00} type="support" />
-            <LevelRow label="دعم رئيسي (S2)" price={2640.00} type="support" />
+            <LevelRow label="دعم أول (S1)" price={2665.0} type="support" />
+            <LevelRow label="دعم رئيسي (S2)" price={2640.0} type="support" />
           </div>
         </CardContent>
       </Card>
@@ -143,17 +159,29 @@ export function GoldPanel() {
       {/* Global Forex Market Sessions */}
       <Card className="border-[#1E293B]">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-xs font-bold text-[#E2E8F0]">
-            <Clock className="h-4 w-4 text-[#06B6D4]" />
-            حالة الجلسات المالية العالمية (Forex Market Sessions)
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-xs font-bold text-[#E2E8F0]">
+              <Clock className="h-4 w-4 text-[#06B6D4]" />
+              حالة الجلسات المالية العالمية (Forex Market Sessions)
+            </CardTitle>
+            {isWeekendClosed && (
+              <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-bold">
+                عطلة نهاية الأسبوع
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-xs">
-            <SessionRow name="جلسة لندن (London Session)" status="active" time="08:00 - 16:00 GMT" />
-            <SessionRow name="جلسة نيويورك (New York Session)" status="active" time="13:00 - 22:00 GMT" />
-            <SessionRow name="جلسة طوكيو (Tokyo Session)" status="closed" time="00:00 - 09:00 GMT" />
-            <SessionRow name="جلسة سيدني (Sydney Session)" status="closed" time="22:00 - 07:00 GMT" />
+            {sessions.map((session) => (
+              <SessionRow
+                key={session.code}
+                name={session.name}
+                status={session.isActive ? "active" : "closed"}
+                statusText={session.statusText}
+                time={session.time}
+              />
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -163,7 +191,7 @@ export function GoldPanel() {
         <div className="flex items-start gap-2 text-xs">
           <Shield className="h-4 w-4 text-[#F59E0B] mt-0.5 shrink-0" />
           <p className="text-[#64748B] text-[11px] leading-relaxed">
-            الشارت المقابل في القائمة الجانبية متصل مباشرة ببيانات OANDA الفورية للذهب. يمكنك ربط مفتاح API المخصص للذهب في نافذة الإعدادات العلوية لتفعيل التنبيهات اللحظية.
+            الشارت المقابل في القائمة الجانبية متصل ببيانات TradingView الرسمية لأونصة الذهب (<span className="text-[#F59E0B] font-mono font-bold">TVC:GOLD</span>) لضمان تطابق تسعير السبوت بدقة 1:1.
           </p>
         </div>
       </div>
@@ -218,10 +246,12 @@ function LevelRow({
 function SessionRow({
   name,
   status,
+  statusText,
   time,
 }: {
   name: string;
   status: "active" | "closed";
+  statusText: string;
   time: string;
 }) {
   return (
@@ -238,10 +268,10 @@ function SessionRow({
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-[#64748B] font-mono">{time}</span>
         <Badge
-          variant={status === "active" ? "bullish" : "default"}
+          variant={status === "active" ? "bullish" : statusText.includes("عطلة") ? "warning" : "default"}
           className="text-[9px] px-1.5 py-0"
         >
-          {status === "active" ? "نشطة الآن" : "مغلقة"}
+          {statusText}
         </Badge>
       </div>
     </div>

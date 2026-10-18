@@ -17,8 +17,8 @@ interface TradingViewChartProps {
 }
 
 function mapSymbolToTradingView(symbol: string, activeMarket: string, tradeMode: string): string {
-  if (activeMarket === "gold" || symbol === "XAUUSD" || symbol.includes("XAU")) {
-    return "OANDA:XAUUSD";
+  if (activeMarket === "gold" || symbol === "XAUUSD" || symbol === "XAU/USD" || symbol.includes("XAU")) {
+    return "TVC:GOLD";
   }
   const clean = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   if (clean.endsWith("USDT")) {

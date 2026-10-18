@@ -199,9 +199,12 @@ export function generateAlgorithmicSmcRecommendation(
   candles15m: CandleData[],
   metrics: SmcMetrics,
   tradeMode: TradeMode,
+  explicitCurrentPrice?: number,
 ): AiTradeRecommendation {
   const latest15m = candles15m[candles15m.length - 1];
-  const currentPrice = latest15m ? latest15m.close : 100;
+  const currentPrice = explicitCurrentPrice && explicitCurrentPrice > 0
+    ? explicitCurrentPrice
+    : (latest15m ? latest15m.close : 100);
 
   // RULE 3 (GOLDEN RULE): Check BTC Dump Risk or Choppy Market
   if (metrics.btcDumpRisk) {
