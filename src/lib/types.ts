@@ -76,6 +76,28 @@ export interface SmcMetrics {
   btcDumpRisk: boolean;
 }
 
+/** Bullet Strategy Signal Schema (استراتيجية بولت) */
+export interface BulletSignal {
+  direction: "LONG" | "SHORT" | "NONE";
+  status: "VALID" | "NO_SETUP";
+  targetPrice?: number;
+  stopLoss?: number;
+  entryPrice?: number;
+  riskRewardRatio?: string;
+  metrics?: {
+    closePrice: number;
+    ema21_high: number;
+    ema21_low: number;
+    ema144: number;
+    recentSwingHigh: number;
+    recentSwingLow: number;
+    macdLine: number;
+    signalLine: number;
+    macdCross: "BULLISH" | "BEARISH" | "NONE";
+  };
+  reasoning_arabic?: string;
+}
+
 /** AI Trade Recommendation Schema (Strict Output) */
 export interface AiTradeRecommendation {
   status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
@@ -91,6 +113,7 @@ export interface AiTradeRecommendation {
   btc_warning: string | null;
   model_used?: string;
   timestamp: number;
+  bullet_signal?: BulletSignal;
 }
 
 /** Trade History Journal Entry */

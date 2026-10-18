@@ -24,6 +24,7 @@ import {
   BookmarkPlus,
   Loader2,
   Database,
+  Crosshair,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +272,85 @@ export function AiRecommendationCard() {
             {rec.reasoning_arabic}
           </p>
         </div>
+
+        {/* 🎯 Bullet Strategy Section (استراتيجية بولت) */}
+        {rec.bullet_signal && (
+          <div className="bg-[#080C14]/90 p-2.5 rounded-xl border border-[#8B5CF6]/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Crosshair className="h-3.5 w-3.5 text-[#8B5CF6]" />
+                <span className="text-xs font-bold text-[#E2E8F0]">
+                  استراتيجية بولت (Bullet Strategy)
+                </span>
+              </div>
+              {rec.bullet_signal.direction === "LONG" && (
+                <Badge variant="bullish" className="text-[10px] font-bold">
+                  🎯 شراء بولت (LONG)
+                </Badge>
+              )}
+              {rec.bullet_signal.direction === "SHORT" && (
+                <Badge variant="bearish" className="text-[10px] font-bold">
+                  🎯 بيع بولت (SHORT)
+                </Badge>
+              )}
+              {rec.bullet_signal.direction === "NONE" && (
+                <Badge variant="default" className="text-[10px] font-mono text-[#64748B]">
+                  لا يوجد نموذج (NO SETUP)
+                </Badge>
+              )}
+            </div>
+
+            {rec.bullet_signal.metrics && (
+              <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono bg-[#0F1419] p-2 rounded-lg border border-[#1E293B]">
+                <div>
+                  <span className="text-[#64748B] block text-[9px]">قناة EMA21</span>
+                  <span className="text-[#06B6D4] font-bold">
+                    ${formatPrice(rec.bullet_signal.metrics.ema21_low)} - ${formatPrice(rec.bullet_signal.metrics.ema21_high)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#64748B] block text-[9px]">متوسط EMA144</span>
+                  <span className="text-[#F59E0B] font-bold">
+                    ${formatPrice(rec.bullet_signal.metrics.ema144)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#64748B] block text-[9px]">تقاطع MACD</span>
+                  <span
+                    className={`font-bold ${
+                      rec.bullet_signal.metrics.macdCross === "BULLISH"
+                        ? "text-[#10B981]"
+                        : rec.bullet_signal.metrics.macdCross === "BEARISH"
+                          ? "text-[#F43F5E]"
+                          : "text-[#64748B]"
+                    }`}
+                  >
+                    {rec.bullet_signal.metrics.macdCross === "BULLISH"
+                      ? "إيجابي ↗"
+                      : rec.bullet_signal.metrics.macdCross === "BEARISH"
+                        ? "سلبي ↘"
+                        : "محايد ↔"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {rec.bullet_signal.targetPrice && rec.bullet_signal.status === "VALID" && (
+              <div className="flex items-center justify-between text-[11px] px-1 text-[#CBD5E1]">
+                <span>الهدف المحسوب (EMA144 / Swing):</span>
+                <span className="font-mono font-bold text-[#10B981]">
+                  ${formatPrice(rec.bullet_signal.targetPrice)}
+                </span>
+              </div>
+            )}
+
+            {rec.bullet_signal.reasoning_arabic && (
+              <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+                {rec.bullet_signal.reasoning_arabic}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* 📌 Save Signal Action Button */}
         {!isNoTrade && (

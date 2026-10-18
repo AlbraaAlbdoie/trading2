@@ -14,6 +14,7 @@ import {
   generateSyntheticGoldKlines,
   generateAlgorithmicSmcRecommendation,
 } from "@/lib/smc";
+import { calculateBulletSignal } from "@/lib/bulletStrategy";
 import type {
   AiAnalysisRequest,
   AiTradeRecommendation,
@@ -208,7 +209,10 @@ export async function POST(req: Request) {
       btcDumpRisk,
     };
 
-    // 3. Check for immediate BTC dump guard rule before querying AI
+    // 3. Compute Bullet Strategy Signal (استراتيجية بولت)
+    const bulletSignal = calculateBulletSignal(candles15m);
+
+    // 4. Check for immediate BTC dump guard rule before querying AI
     if (btcDumpRisk) {
       const btcAlertRec = generateAlgorithmicSmcRecommendation(
         symbol,
@@ -218,10 +222,11 @@ export async function POST(req: Request) {
         tradeMode,
       );
       btcAlertRec.model_used = "BTC Dump Guard Engine";
+      btcAlertRec.bullet_signal = bulletSignal;
       return NextResponse.json(btcAlertRec);
     }
 
-    // 4. Construct AI Prompt Payload
+    // 5. Construct AI Prompt Payload
     const latest15m = candles15m[candles15m.length - 1];
     const latest1h = candles1h[candles1h.length - 1];
 
@@ -240,10 +245,18 @@ export async function POST(req: Request) {
 ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${fundingRate.toFixed(4)}% | تغير الفائدة المفتوحة 1h: +${openInterestChange1h}%` : ""}
 - حالة البيتكوين: ${btcDumpRisk ? "خطر هبوط سريع" : "مستقر آمن للتداول"}
 
-المطلوب: أخرج كائن JSON بالهيكل المحدد فقط. إذا كانت الشروط غير مكتملة بنسبة 100%، التزم بالقاعدة الذهبية واجعل status: "NO_CLEAR_SETUP".
+بيانات استراتيجية بولت (Bullet Strategy Indicator):
+- حالة إشارة بولت: ${bulletSignal.direction} (${bulletSignal.status})
+- تقاطع مؤشر MACD: ${bulletSignal.metrics?.macdCross || "NONE"}
+- قناة EMA 21: High = ${bulletSignal.metrics?.ema21_high?.toFixed(2) || 0} | Low = ${bulletSignal.metrics?.ema21_low?.toFixed(2) || 0}
+- متوسط EMA 144 الديناميكي: ${bulletSignal.metrics?.ema144?.toFixed(2) || 0}
+- الهدف المحسوب باستراتيجية بولت: ${bulletSignal.targetPrice ? "$" + bulletSignal.targetPrice : "غير محدد"}
+- ملخص بولت: ${bulletSignal.reasoning_arabic || "لا يوجد"}
+
+المطلوب: أخرج كائن JSON بالهيكل المحدد فقط مع الأخذ بالاعتبار توافق مفاهيم SMC مع إشارة استراتيجية بولت. إذا كانت الشروط غير مكتملة بنسبة 100%، التزم بالقاعدة الذهبية واجعل status: "NO_CLEAR_SETUP".
 `;
 
-    // 5. Multi-Provider Call with Algorithmic Fallback
+    // 6. Multi-Provider Call with Algorithmic Fallback
     let rawAiResponse = "";
     let modelName = "";
 
@@ -279,6 +292,7 @@ ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${funding
       const parsed: AiTradeRecommendation = cleanAndParseJson<AiTradeRecommendation>(rawAiResponse);
       parsed.model_used = modelName;
       parsed.timestamp = Date.now();
+      parsed.bullet_signal = bulletSignal;
       return NextResponse.json(parsed);
     } catch (aiCallErr) {
       console.warn("[API] AI provider call encountered error, activating Quant SMC fallback:", aiCallErr);
@@ -290,6 +304,7 @@ ${tradeMode === "futures" ? `- معدل التمويل (Funding Rate): ${funding
         tradeMode,
       );
       fallbackRec.model_used = `Quant SMC Engine (${modelName || "محرك الطوارئ الذكي"})`;
+      fallbackRec.bullet_signal = bulletSignal;
       return NextResponse.json(fallbackRec);
     }
   } catch (error) {
