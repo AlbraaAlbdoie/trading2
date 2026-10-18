@@ -63,10 +63,10 @@ export const TradingViewChart = memo(function TradingViewChart({ className }: Tr
     setChartTimeframe(tf);
   };
 
-  // Build clean, standalone TradingView iframe embed URL
+  // Build clean, standalone TradingView iframe embed URL with MACD pane
   const iframeSrc = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(
     tvSymbol,
-  )}&interval=${chartTimeframe}&symboledit=0&saveimage=0&toolbarbg=080C14&theme=dark&style=1&timezone=Etc%2FUTC&studies=%5B%5D&locale=ar_AE&overrides=%7B%22paneProperties.background%22%3A%22%23080C14%22%2C%22paneProperties.vertGridProperties.color%22%3A%22rgba(30%2C41%2C59%2C0.4)%22%2C%22paneProperties.horzGridProperties.color%22%3A%22rgba(30%2C41%2C59%2C0.4)%22%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&utm_source=nexus-alpha`;
+  )}&interval=${chartTimeframe}&symboledit=0&saveimage=0&toolbarbg=080C14&theme=dark&style=1&timezone=Etc%2FUTC&studies=%5B%22MACD%40tv-basicstudies%22%5D&locale=ar_AE&overrides=%7B%22paneProperties.background%22%3A%22%23080C14%22%2C%22paneProperties.vertGridProperties.color%22%3A%22rgba(30%2C41%2C59%2C0.4)%22%2C%22paneProperties.horzGridProperties.color%22%3A%22rgba(30%2C41%2C59%2C0.4)%22%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&utm_source=nexus-alpha`;
 
   return (
     <div

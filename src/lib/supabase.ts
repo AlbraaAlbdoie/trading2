@@ -22,7 +22,7 @@ export interface SupabaseSavedSignal {
   id?: string;
   user_id: string;
   symbol: string;
-  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP";
+  status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
   entry_price: number;
   stop_loss: number;
   take_profit_1: number;
