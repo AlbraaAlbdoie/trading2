@@ -75,7 +75,7 @@ export function TopNavBar() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#1E293B] bg-[#080C14]/95 backdrop-blur-xl">
-      <div className="flex items-center justify-between px-3 lg:px-4 h-14 gap-2 lg:gap-3 overflow-x-auto">
+      <div className="flex items-center justify-between px-2.5 sm:px-3 lg:px-4 h-14 gap-1.5 sm:gap-2 lg:gap-3 overflow-x-auto scrollbar-hide">
         {/* Brand */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-2">
@@ -101,12 +101,14 @@ export function TopNavBar() {
             onClick={() => handleMarketChange("crypto")}
             icon={<Bitcoin className="h-3.5 w-3.5" />}
             label="سوق الكريبتو"
+            shortLabel="كريبتو"
           />
           <MarketTabButton
             active={activeMarket === "gold"}
             onClick={() => handleMarketChange("gold")}
             icon={<CircleDollarSign className="h-3.5 w-3.5" />}
             label="الذهب (XAU/USD)"
+            shortLabel="الذهب"
             goldMode
           />
         </div>
@@ -118,11 +120,13 @@ export function TopNavBar() {
               active={tradeMode === "futures"}
               onClick={() => handleModeChange("futures")}
               label="عقود آجلة (FUTURES)"
+              shortLabel="عقود"
             />
             <TradeModeButton
               active={tradeMode === "spot"}
               onClick={() => handleModeChange("spot")}
               label="سوق فوري (SPOT)"
+              shortLabel="سبوت"
             />
           </div>
         )}
@@ -156,11 +160,12 @@ export function TopNavBar() {
             variant="outline"
             size="sm"
             onClick={() => setIsSavedSignalsOpen(true)}
-            className="h-8 px-2.5 text-xs text-[#E2E8F0] border-[#1E293B] hover:border-[#06B6D4] gap-1.5"
+            className="h-8 px-2 sm:px-2.5 text-xs text-[#E2E8F0] border-[#1E293B] hover:border-[#06B6D4] gap-1 sm:gap-1.5"
             title="التوصيات المحفوظة في قاعدة البيانات"
           >
             <FolderBookmark className="h-3.5 w-3.5 text-[#06B6D4]" />
-            <span className="hidden sm:inline">التوصيات المحفوظة</span>
+            <span className="hidden md:inline">التوصيات المحفوظة</span>
+            <span className="hidden sm:inline md:hidden">المحفوظة</span>
             {savedSignals.length > 0 && (
               <span className="h-4 min-w-4 px-1 rounded-full bg-[#06B6D4]/20 text-[#06B6D4] font-mono text-[10px] font-bold flex items-center justify-center">
                 {savedSignals.length}
@@ -173,11 +178,12 @@ export function TopNavBar() {
             variant="outline"
             size="sm"
             onClick={() => setIsJournalOpen(true)}
-            className="h-8 px-2.5 text-xs text-[#E2E8F0] border-[#1E293B] hover:border-[#10B981] gap-1.5"
+            className="h-8 px-2 sm:px-2.5 text-xs text-[#E2E8F0] border-[#1E293B] hover:border-[#10B981] gap-1 sm:gap-1.5"
             title="سجل الصفقات وتحليلات الأداء"
           >
             <BookOpen className="h-3.5 w-3.5 text-[#10B981]" />
             <span className="hidden md:inline">سجل الصفقات</span>
+            <span className="hidden sm:inline md:hidden">السجل</span>
             {journalEntries.length > 0 && (
               <span className="h-4 min-w-4 px-1 rounded-full bg-[#10B981]/20 text-[#10B981] font-mono text-[10px] font-bold flex items-center justify-center">
                 {journalEntries.length}
@@ -202,13 +208,13 @@ export function TopNavBar() {
             <div className="flex items-center gap-1.5 bg-[#0F1419] border border-[#1E293B] rounded-lg px-2 py-1">
               <div className="flex items-center gap-1 text-xs">
                 <User className="h-3.5 w-3.5 text-[#10B981]" />
-                <span className="font-mono text-[11px] text-[#E2E8F0] max-w-[100px] truncate hidden sm:inline">
+                <span className="font-mono text-[11px] text-[#E2E8F0] max-w-[80px] sm:max-w-[100px] truncate hidden sm:inline">
                   {authUser.email.split("@")[0]}
                 </span>
               </div>
               <button
                 onClick={signOutUser}
-                className="text-[#64748B] hover:text-[#F43F5E] p-0.5 rounded transition-colors cursor-pointer mr-1"
+                className="text-[#64748B] hover:text-[#F43F5E] p-0.5 rounded transition-colors cursor-pointer mr-0.5"
                 title="تسجيل الخروج"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -219,10 +225,11 @@ export function TopNavBar() {
               variant="scanner"
               size="sm"
               onClick={() => setIsAuthModalOpen(true)}
-              className="h-8 px-2.5 text-xs font-bold gap-1"
+              className="h-8 px-2 sm:px-2.5 text-xs font-bold gap-1"
             >
               <LogIn className="h-3.5 w-3.5" />
-              <span>تسجيل الدخول</span>
+              <span className="hidden sm:inline">تسجيل الدخول</span>
+              <span className="sm:hidden">دخول</span>
             </Button>
           )}
 
@@ -256,19 +263,21 @@ function MarketTabButton({
   onClick,
   icon,
   label,
+  shortLabel,
   goldMode,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  shortLabel?: string;
   goldMode?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer",
+        "flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer shrink-0",
         active
           ? goldMode
             ? "bg-[#F59E0B]/20 text-[#F59E0B] shadow-inner border border-[#F59E0B]/30"
@@ -277,7 +286,8 @@ function MarketTabButton({
       )}
     >
       {icon}
-      <span>{label}</span>
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{shortLabel || label}</span>
     </button>
   );
 }
@@ -286,23 +296,26 @@ function TradeModeButton({
   active,
   onClick,
   label,
+  shortLabel,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  shortLabel?: string;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer",
+        "flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-bold transition-all duration-200 cursor-pointer shrink-0",
         active
           ? "bg-[#1E293B] text-[#E2E8F0] shadow-inner border border-[#334155]"
           : "text-[#64748B] hover:text-[#E2E8F0]",
       )}
     >
       <ArrowRightLeft className="h-3 w-3" />
-      <span>{label}</span>
+      <span className="hidden sm:inline">{label}</span>
+      <span className="sm:hidden">{shortLabel || label}</span>
     </button>
   );
 }

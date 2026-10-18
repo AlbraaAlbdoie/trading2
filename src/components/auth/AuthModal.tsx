@@ -100,8 +100,8 @@ export function AuthModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in" dir="rtl">
-      <div className="relative w-full max-w-md rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-6 text-right overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-fade-in" dir="rtl">
+      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-4 sm:p-6 text-right">
         {/* Glow Line */}
         <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#8B5CF6] via-[#06B6D4] to-[#10B981]" />
 

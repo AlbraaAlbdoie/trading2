@@ -122,22 +122,22 @@ export function TradeJournalModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in" dir="rtl">
-      <div className="relative w-full max-w-4xl rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-6 text-right overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-4 animate-fade-in" dir="rtl">
+      <div className="relative w-full max-w-4xl rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-4 sm:p-6 text-right overflow-hidden flex flex-col max-h-[90vh]">
         {/* Top Glow */}
         <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#8B5CF6] via-[#06B6D4] to-[#10B981]" />
 
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#1E293B] mb-4 shrink-0">
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#1E293B] mb-3 sm:mb-4 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30">
               <BookOpen className="h-5 w-5 text-[#8B5CF6]" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#E2E8F0]">
+              <h2 className="text-sm sm:text-base font-bold text-[#E2E8F0]">
                 سجل الصفقات الذكية وتحليلات الأداء (Trade Journal & Analytics)
               </h2>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-[11px] sm:text-xs text-[#64748B]">
                 توثيق آلي لكل التوصيات المولدة ومتابعة نسبة النجاح الحقيقية
               </p>
             </div>
@@ -235,7 +235,7 @@ export function TradeJournalModal() {
               <p>ستظهر هنا تلقائياً أي توصية يولدها محرك الذكاء الاصطناعي (LONG / SHORT / SPOT BUY)</p>
             </div>
           ) : (
-            <table className="w-full text-right text-xs">
+            <table className="w-full min-w-[650px] text-right text-xs">
               <thead className="sticky top-0 bg-[#0A0F16] text-[#64748B] border-b border-[#1E293B]">
                 <tr>
                   <th className="px-3 py-2.5">الرمز والنوع</th>

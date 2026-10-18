@@ -43,15 +43,15 @@ export function ScreenerFilters() {
   };
 
   return (
-    <div className="flex flex-col gap-3 p-4 border-b border-[#1E293B] bg-[#080C14]">
+    <div className="flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 border-b border-[#1E293B] bg-[#080C14]">
       {/* Top row: AI Scanner + Search */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <Button
           variant="scanner"
           size="sm"
           onClick={handleAiScan}
           disabled={isAutoScanning}
-          className="shrink-0 font-bold tracking-wide"
+          className="w-full sm:w-auto shrink-0 font-bold tracking-wide h-9 text-xs justify-center"
         >
           {isAutoScanning ? (
             <>
@@ -61,7 +61,8 @@ export function ScreenerFilters() {
           ) : (
             <>
               <Sparkles className="h-4 w-4 ml-1.5 animate-pulse" />
-              <span>🚀 مسح السوق الآلي (AUTO AI ALPHA SCANNER)</span>
+              <span className="hidden sm:inline">🚀 مسح السوق الآلي (AUTO AI ALPHA SCANNER)</span>
+              <span className="sm:hidden">🚀 مسح آلي لأقوى الفرص (AI SCANNER)</span>
             </>
           )}
         </Button>
@@ -72,7 +73,7 @@ export function ScreenerFilters() {
             placeholder="ابحث عن رمز العملة أو الزوج (مثال: SOL, ETH, BTC)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pr-9 pl-3 h-9 text-xs placeholder:text-[#64748B]"
+            className="pr-9 pl-3 h-9 text-xs placeholder:text-[#64748B] w-full"
           />
         </div>
       </div>

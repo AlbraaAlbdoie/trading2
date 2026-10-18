@@ -63,7 +63,7 @@ export function GoldPanel() {
   const sessions = getForexMarketSessions();
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto p-4 gap-4 bg-[#080C14]">
+    <div className="flex flex-col h-full overflow-y-auto p-3 sm:p-4 gap-3 sm:gap-4 bg-[#080C14]">
       {/* Weekend Closure Warning Banner */}
       {isWeekendClosed && (
         <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-xs text-[#F59E0B] animate-pulse">
@@ -87,7 +87,7 @@ export function GoldPanel() {
                 <DollarSign className="h-5 w-5 text-[#F59E0B]" />
               </div>
               <div>
-                <span className="text-[#F59E0B] font-bold">أونصة الذهب الفورية — XAU/USD</span>
+                <span className="text-[#F59E0B] font-bold text-sm sm:text-base">أونصة الذهب الفورية — XAU/USD</span>
                 <p className="text-[10px] text-[#64748B]">مؤشر تسعير الذهب العالمي مقابل الدولار الأمريكي (TVC:GOLD)</p>
               </div>
             </div>
@@ -97,30 +97,30 @@ export function GoldPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-baseline gap-4 mb-4 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-[#F59E0B]">
+          <div className="flex items-baseline gap-2 sm:gap-4 mb-3 sm:mb-4 mt-2 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-extrabold font-mono text-[#F59E0B]">
               ${formatPrice(gold.price)}
             </span>
             <span
               className={cn(
-                "text-base font-bold font-mono flex items-center gap-1 px-2 py-0.5 rounded",
+                "text-xs sm:text-base font-bold font-mono flex items-center gap-1 px-2 py-0.5 rounded",
                 isBullish ? "text-[#10B981] bg-[#10B981]/10" : "text-[#F43F5E] bg-[#F43F5E]/10",
               )}
             >
               {isBullish ? (
-                <TrendingUp className="h-4 w-4" />
+                <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               ) : (
-                <TrendingDown className="h-4 w-4" />
+                <TrendingDown className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               )}
               {formatPercent(gold.change24h)}
             </span>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <StatCard label="أعلى سعر 24س" value={`$${formatPrice(gold.high24h)}`} color="text-[#10B981]" />
-            <StatCard label="أدنى سعر 24س" value={`$${formatPrice(gold.low24h)}`} color="text-[#F43F5E]" />
-            <StatCard label="حجم التداول التقديري" value={gold.volume} color="text-[#F59E0B]" />
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3">
+            <StatCard label="أعلى 24س" value={`$${formatPrice(gold.high24h)}`} color="text-[#10B981]" />
+            <StatCard label="أدنى 24س" value={`$${formatPrice(gold.low24h)}`} color="text-[#F43F5E]" />
+            <StatCard label="حجم تقديري" value={gold.volume} color="text-[#F59E0B]" />
           </div>
 
           <Button
@@ -130,9 +130,10 @@ export function GoldPanel() {
               setSelectedSymbol("XAUUSD");
               runAiAnalysis("XAUUSD", gold.price);
             }}
-            className="w-full font-bold text-xs cursor-pointer"
+            className="w-full font-bold text-xs cursor-pointer py-2"
           >
-            ⚡ تحليل الذهب الفوري (XAU/USD) بنظام الذكاء الاصطناعي المؤسساتي
+            <span className="hidden sm:inline">⚡ تحليل الذهب الفوري (XAU/USD) بنظام الذكاء الاصطناعي المؤسساتي</span>
+            <span className="sm:hidden">⚡ تحليل الذهب الفوري (XAU/USD) بالذكاء AI</span>
           </Button>
         </CardContent>
       </Card>

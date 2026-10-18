@@ -63,6 +63,8 @@ interface StoreState {
   journalEntries: TradeJournalEntry[];
   isJournalOpen: boolean;
   toasts: ToastNotification[];
+  // Mobile Navigation
+  mobileActiveTab: "screener" | "chart" | "ai";
   // Supabase Auth & Saved Signals
   authUser: AuthUser | null;
   isAuthLoading: boolean;
@@ -102,6 +104,7 @@ const initialState: StoreState = {
   journalEntries: [],
   isJournalOpen: false,
   toasts: [],
+  mobileActiveTab: "screener",
   authUser: null,
   isAuthLoading: true,
   isAuthModalOpen: false,
@@ -145,7 +148,8 @@ type Action =
   | { type: "SET_SAVED_SIGNALS"; payload: SavedSignalItem[] }
   | { type: "ADD_SAVED_SIGNAL"; payload: SavedSignalItem }
   | { type: "REMOVE_SAVED_SIGNAL"; payload: string }
-  | { type: "SET_SAVING_SIGNAL"; payload: boolean };
+  | { type: "SET_SAVING_SIGNAL"; payload: boolean }
+  | { type: "SET_MOBILE_TAB"; payload: "screener" | "chart" | "ai" };
 
 function reducer(state: StoreState, action: Action): StoreState {
   switch (action.type) {
@@ -235,6 +239,8 @@ function reducer(state: StoreState, action: Action): StoreState {
       return { ...state, savedSignals: state.savedSignals.filter((s) => s.id !== action.payload) };
     case "SET_SAVING_SIGNAL":
       return { ...state, isSavingSignal: action.payload };
+    case "SET_MOBILE_TAB":
+      return { ...state, mobileActiveTab: action.payload };
     default:
       return state;
   }
@@ -274,6 +280,7 @@ interface StoreContextType {
   saveCurrentSignal: () => Promise<void>;
   deleteSavedSignal: (id: string) => Promise<void>;
   fetchSavedSignals: () => Promise<void>;
+  setMobileActiveTab: (tab: "screener" | "chart" | "ai") => void;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -620,6 +627,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     (open: boolean) => dispatch({ type: "SET_SAVED_SIGNALS_OPEN", payload: open }),
     [],
   );
+  const setMobileActiveTab = useCallback(
+    (tab: "screener" | "chart" | "ai") =>
+      dispatch({ type: "SET_MOBILE_TAB", payload: tab }),
+    [],
+  );
 
   const updateTradeOutcome = useCallback((id: string, outcome: TradeOutcome) => {
     dispatch({ type: "UPDATE_TRADE_OUTCOME", payload: { id, outcome } });
@@ -686,6 +698,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }
 
       dispatch({ type: "SET_AI_ANALYZING", payload: true });
+      dispatch({ type: "SET_MOBILE_TAB", payload: "ai" });
 
       try {
         const res = await fetch("/api/ai-analyze", {
@@ -842,6 +855,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         saveCurrentSignal,
         deleteSavedSignal,
         fetchSavedSignals,
+        setMobileActiveTab,
       }}
     >
       {children}

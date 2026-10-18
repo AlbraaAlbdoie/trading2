@@ -47,27 +47,27 @@ export function SavedSignalsModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in" dir="rtl">
-      <div className="relative w-full max-w-3xl rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-6 text-right overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-fade-in" dir="rtl">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-4 sm:p-6 text-right overflow-hidden flex flex-col max-h-[90vh]">
         {/* Top Glow */}
         <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#06B6D4] via-[#8B5CF6] to-[#10B981]" />
 
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#1E293B] mb-4 shrink-0">
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#1E293B] mb-3 sm:mb-4 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-[#06B6D4]/15 border border-[#06B6D4]/30">
               <FolderBookmark className="h-5 w-5 text-[#06B6D4]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-[#E2E8F0]">
+                <h2 className="text-sm sm:text-base font-bold text-[#E2E8F0]">
                   التوصيات المحفوظة في قاعدة البيانات (Saved Signals)
                 </h2>
                 <Badge variant="violet" className="text-[10px] font-mono">
                   {savedSignals.length} توصية
                 </Badge>
               </div>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-[11px] sm:text-xs text-[#64748B]">
                 {authUser ? `الحساب المتصل: ${authUser.email}` : "قاعدة بيانات Supabase"}
               </p>
             </div>

@@ -96,7 +96,7 @@ export function ScreenerTable() {
         ) : noResults ? (
           <EmptyState />
         ) : (
-          <table className="w-full border-collapse">
+          <table className="w-full min-w-[560px] border-collapse">
             {/* Header */}
             <thead className="sticky top-0 z-10 bg-[#0A0F16]">
               <tr>
@@ -104,7 +104,7 @@ export function ScreenerTable() {
                   <th
                     key={col.key}
                     className={cn(
-                      "px-4 py-2.5 text-[11px] font-bold text-[#64748B] border-b border-[#1E293B]",
+                      "px-3 sm:px-4 py-2.5 text-[11px] font-bold text-[#64748B] border-b border-[#1E293B]",
                       col.align === "right" && "text-right",
                       col.align === "left" && "text-left",
                       col.align === "center" && "text-center",
@@ -148,14 +148,14 @@ export function ScreenerTable() {
 
       {/* Footer Stats */}
       {!isEmpty && (
-        <div className="flex items-center justify-between px-4 py-2 border-t border-[#1E293B] bg-[#0A0F16] text-xs text-[#64748B]">
+        <div className="flex flex-col sm:flex-row items-center justify-between px-3 sm:px-4 py-2 border-t border-[#1E293B] bg-[#0A0F16] text-[11px] sm:text-xs text-[#64748B] gap-1 sm:gap-0 shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-[#8B5CF6]" />
             <span>
               عرض {filteredTickers.length} من أصل {tickers.length} زوج مؤهل
             </span>
           </div>
-          <span className="font-mono text-[11px] bg-[#1E293B]/40 px-2 py-0.5 rounded border border-[#1E293B]">
+          <span className="font-mono text-[10px] sm:text-[11px] bg-[#1E293B]/40 px-2 py-0.5 rounded border border-[#1E293B]">
             فلتر السيولة الصارم: حجم 24س ≥ 30,000,000 USDT
           </span>
         </div>

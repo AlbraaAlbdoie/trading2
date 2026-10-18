@@ -33,7 +33,7 @@ export function MarketHealthBar() {
       )}
 
       {/* Stats Row */}
-      <div className="flex items-center justify-between px-4 py-2 gap-4 overflow-x-auto text-xs">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 sm:py-2 gap-3 sm:gap-4 overflow-x-auto text-[11px] sm:text-xs whitespace-nowrap scrollbar-hide">
         {/* Market Stats */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">

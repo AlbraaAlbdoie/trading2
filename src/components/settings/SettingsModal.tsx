@@ -60,16 +60,16 @@ export function SettingsModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-4 animate-fade-in">
       <div
-        className="relative w-full max-w-xl rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-6 text-right overflow-hidden"
+        className="relative w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-[#1E293B] bg-[#0F1419] shadow-2xl p-4 sm:p-6 text-right overflow-hidden"
         dir="rtl"
       >
         {/* Glow accent */}
         <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#8B5CF6] via-[#06B6D4] to-[#10B981]" />
 
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#1E293B] mb-5">
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#1E293B] mb-4 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-lg bg-[#8B5CF6]/10 border border-[#8B5CF6]/20">
               <Key className="h-5 w-5 text-[#8B5CF6]" />
@@ -92,7 +92,7 @@ export function SettingsModal() {
         </div>
 
         {/* Model Selector */}
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
+        <div className="space-y-4 flex-1 overflow-y-auto px-1 py-1">
           <div>
             <label className="block text-xs font-semibold text-[#E2E8F0] mb-2 flex items-center gap-1.5">
               <Cpu className="h-4 w-4 text-[#06B6D4]" />
@@ -181,18 +181,18 @@ export function SettingsModal() {
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-5 mt-4 border-t border-[#1E293B]">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between pt-3 sm:pt-4 mt-3 border-t border-[#1E293B] gap-2 shrink-0">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleResetDefaults}
-            className="text-xs text-[#64748B] hover:text-[#E2E8F0]"
+            className="text-xs text-[#64748B] hover:text-[#E2E8F0] justify-center"
           >
             <RotateCcw className="h-3.5 w-3.5 ml-1.5" />
             استعادة الافتراضي
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 justify-end">
             <Button
               variant="outline"
               size="sm"

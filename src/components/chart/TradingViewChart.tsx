@@ -94,14 +94,14 @@ export const TradingViewChart = memo(function TradingViewChart({ className }: Tr
         </div>
 
         {/* Timeframe Buttons */}
-        <div className="flex items-center gap-1 bg-[#080C14] p-1 rounded-lg border border-[#1E293B]">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#080C14] p-0.5 sm:p-1 rounded-lg border border-[#1E293B]">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.key}
               onClick={() => handleTimeframeChange(tf.key)}
               title={tf.tooltip}
               className={cn(
-                "px-2.5 py-1 text-xs font-semibold rounded transition-all duration-150 cursor-pointer",
+                "px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-semibold rounded transition-all duration-150 cursor-pointer",
                 chartTimeframe === tf.key
                   ? "bg-[#8B5CF6] text-white shadow-sm shadow-violet-500/30"
                   : "text-[#64748B] hover:text-[#E2E8F0] hover:bg-[#1E293B]",
