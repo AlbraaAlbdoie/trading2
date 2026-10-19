@@ -32,6 +32,10 @@ import type {
 import { DEFAULT_API_KEYS } from "@/lib/constants";
 import { playTradeChime } from "@/hooks/useAudioAlert";
 import { supabase } from "@/lib/supabase";
+import {
+  requestNotificationPermission,
+  sendTradeSignalNotification,
+} from "@/lib/webNotifications";
 
 // ── Storage Keys ──────────────────────────────────────────────────────
 const STORAGE_KEY_SETTINGS = "nexus_alpha_api_settings";
@@ -281,6 +285,7 @@ interface StoreContextType {
   deleteSavedSignal: (id: string) => Promise<void>;
   fetchSavedSignals: () => Promise<void>;
   setMobileActiveTab: (tab: "screener" | "chart" | "ai") => void;
+  triggerTestSignalPipeline: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -557,6 +562,97 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
     addToast("تم حذف التوصية المحفوظة", "info");
   }, [addToast]);
+
+  // Temporary Test Notification & Sound Pipeline Trigger
+  const triggerTestSignalPipeline = useCallback(async () => {
+    // 1. Request notification permissions if not granted
+    const perm = await requestNotificationPermission();
+
+    // 2. Play the Web Audio chime sound
+    playTradeChime("high");
+
+    // 3. Mock trade setup (SOLUSDT LONG, Confluence 90%)
+    const mockRec: AiTradeRecommendation = {
+      status: "LONG",
+      confidence_score: 90,
+      confluence_score: 90,
+      symbol: "SOLUSDT",
+      timeframe_confluence: "إشارة تجريبية: توافق صاعد قوي (EMA 50 > EMA 200) + حجم مؤكد RVOL 2.4x",
+      entry_price: 185.5,
+      stop_loss: 178.2,
+      take_profit_1: 195.0,
+      take_profit_2: 205.0,
+      risk_reward_ratio: "1:2.5",
+      reasoning_arabic: "🟢 صفقة تجريبية لاختبار دورة الإشعارات وقاعدة البيانات: نموذج اختراق صاعد مع سيولة مؤسساتية مؤكدة بنسبة 90%.",
+      btc_warning: null,
+      timestamp: Date.now(),
+      model_used: "نظام الفحص التجريبي (Test Diagnostic)",
+    };
+
+    dispatch({ type: "SET_AI_REC", payload: mockRec });
+
+    // Send native web push notification
+    sendTradeSignalNotification(mockRec);
+
+    // 4. Auto-save mock signal to Supabase
+    const fallbackId = `sig_test_${Date.now()}`;
+    const testSavedItem: SavedSignalItem = {
+      id: fallbackId,
+      user_id: state.authUser ? state.authUser.id : "guest_demo_user",
+      symbol: mockRec.symbol,
+      status: mockRec.status,
+      entry_price: mockRec.entry_price,
+      stop_loss: mockRec.stop_loss,
+      take_profit_1: mockRec.take_profit_1,
+      take_profit_2: mockRec.take_profit_2,
+      risk_reward_ratio: mockRec.risk_reward_ratio,
+      confidence_score: mockRec.confidence_score,
+      timeframe_confluence: mockRec.timeframe_confluence,
+      reasoning_arabic: mockRec.reasoning_arabic,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      if (state.authUser) {
+        const { data, error } = await supabase
+          .from("saved_signals")
+          .insert([
+            {
+              user_id: state.authUser.id,
+              symbol: mockRec.symbol,
+              status: mockRec.status,
+              entry_price: mockRec.entry_price,
+              stop_loss: mockRec.stop_loss,
+              take_profit_1: mockRec.take_profit_1,
+              take_profit_2: mockRec.take_profit_2,
+              risk_reward_ratio: mockRec.risk_reward_ratio,
+              confidence_score: mockRec.confidence_score,
+              timeframe_confluence: mockRec.timeframe_confluence,
+              reasoning_arabic: mockRec.reasoning_arabic,
+            },
+          ])
+          .select();
+
+        if (data && data[0]) {
+          dispatch({ type: "ADD_SAVED_SIGNAL", payload: data[0] as SavedSignalItem });
+        } else {
+          dispatch({ type: "ADD_SAVED_SIGNAL", payload: testSavedItem });
+        }
+      } else {
+        dispatch({ type: "ADD_SAVED_SIGNAL", payload: testSavedItem });
+      }
+    } catch (err) {
+      console.warn("DB save test notice:", err);
+      dispatch({ type: "ADD_SAVED_SIGNAL", payload: testSavedItem });
+    }
+
+    addToast(
+      perm === "granted"
+        ? "🔔 نجح الاختبار! تم تشغيل الصوت، إرسال الإشعار، وحفظ صفقة SOLUSDT التجريبية في Supabase بنجاح 💾"
+        : "⚠️ تم تشغيل الصوت وحفظ الصفقة، ولكن يرجى تفعيل إذن الإشعارات من المتصفح",
+      perm === "granted" ? "success" : "info",
+    );
+  }, [state.authUser, addToast]);
 
   const setActiveMarket = useCallback(
     (m: MarketTab) => dispatch({ type: "SET_MARKET", payload: m }),
@@ -861,6 +957,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         deleteSavedSignal,
         fetchSavedSignals,
         setMobileActiveTab,
+        triggerTestSignalPipeline,
       }}
     >
       {children}

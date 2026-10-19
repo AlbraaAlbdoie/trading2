@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Sparkles,
   RotateCcw,
+  Bell,
+  BellRing,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +27,7 @@ import { playTradeChime } from "@/hooks/useAudioAlert";
 import type { AiModelOption, ApiSettingsConfig } from "@/lib/types";
 
 export function SettingsModal() {
-  const { state, setIsSettingsOpen, setApiSettings } = useDashboardStore();
+  const { state, setIsSettingsOpen, setApiSettings, triggerTestSignalPipeline } = useDashboardStore();
   const { isSettingsOpen, apiSettings, audioEnabled } = state;
 
   const [formData, setFormData] = useState<ApiSettingsConfig>(apiSettings);
@@ -177,6 +179,32 @@ export function SettingsModal() {
               onToggleShow={() => toggleShow("gold")}
               onChange={(val) => setFormData((prev) => ({ ...prev, goldKey: val }))}
             />
+
+            {/* Notification & Audio Pipeline Diagnostic Section */}
+            <div className="bg-[#080C14] p-3 rounded-xl border border-[#3B82F6]/30 space-y-2.5 mt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#60A5FA]">
+                  <BellRing className="h-4 w-4 text-[#3B82F6]" />
+                  <span>فحص دورة الإشعارات والتنبيه الصوتي وقاعدة البيانات:</span>
+                </div>
+                <Badge className="bg-[#3B82F6]/15 text-[#60A5FA] border-[#3B82F6]/30 text-[10px]">
+                  أداة فحص تجريبية
+                </Badge>
+              </div>
+              <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+                اضغط على الزر أدناه لتجربة طلب إذن الإشعارات، تشغيل نغمة الصفقات، إرسال إشعار فوري لسطح المكتب / الهاتف (SOLUSDT 90%)، وحفظ الصفقة التجريبية في Supabase فوراً.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={triggerTestSignalPipeline}
+                className="w-full h-9 bg-[#1E293B]/40 hover:bg-[#3B82F6]/20 border-[#3B82F6]/50 text-[#60A5FA] hover:text-[#93C5FD] font-bold text-xs gap-2 transition-all cursor-pointer shadow-md"
+              >
+                <Bell className="h-4 w-4 text-[#3B82F6] animate-pulse" />
+                <span>🔔 اختبار الإشعار والصوت (Test Notification)</span>
+              </Button>
+            </div>
           </div>
         </div>
 

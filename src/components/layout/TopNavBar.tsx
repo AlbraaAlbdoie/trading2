@@ -20,6 +20,7 @@ import {
   User,
   LogOut,
   LogIn,
+  Bell,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export function TopNavBar() {
     setIsSavedSignalsOpen,
     setIsAuthModalOpen,
     signOutUser,
+    triggerTestSignalPipeline,
   } = useDashboardStore();
 
   const {
@@ -158,6 +160,19 @@ export function TopNavBar() {
         <div className="flex items-center gap-2 shrink-0">
           {/* 📡 Auto Monitor Mode Toggle */}
           <AutoMonitorToggle />
+
+          {/* 🔔 Temporary Test Notification & Sound Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={triggerTestSignalPipeline}
+            className="h-8 px-2 sm:px-2.5 text-xs text-[#60A5FA] border-[#3B82F6]/40 bg-[#3B82F6]/10 hover:bg-[#3B82F6]/20 hover:border-[#3B82F6] gap-1 sm:gap-1.5 font-bold cursor-pointer"
+            title="اختبار الإشعار، الصوت، وحفظ صفقة تجريبية في Supabase"
+          >
+            <Bell className="h-3.5 w-3.5 text-[#3B82F6]" />
+            <span className="hidden xl:inline">🔔 اختبار الإشعار</span>
+            <span className="hidden sm:inline xl:hidden">🔔 اختبار</span>
+          </Button>
 
           {/* 📂 Saved Signals Drawer Button */}
           <Button
