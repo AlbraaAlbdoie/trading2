@@ -78,7 +78,7 @@ export function TopNavBar() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#1E293B] bg-[#080C14]/95 backdrop-blur-xl">
-      <div className="flex items-center justify-between px-2.5 sm:px-3 lg:px-4 h-14 gap-1.5 sm:gap-2 lg:gap-3 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center justify-between px-2.5 sm:px-3 lg:px-4 h-14 gap-1.5 sm:gap-2 lg:gap-3 overflow-visible">
         {/* Brand */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-2">
@@ -157,7 +157,7 @@ export function TopNavBar() {
         </div>
 
         {/* Controls Bar */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 relative z-50 overflow-visible">
           {/* 📡 Auto Monitor Mode Toggle */}
           <AutoMonitorToggle />
 

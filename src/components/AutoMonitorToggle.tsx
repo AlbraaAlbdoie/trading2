@@ -1,13 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // NEXUS ALPHA — Auto-Monitor Header Toggle (وضع المراقبة التلقائية)
-// Background scans (5m, 15m, 30m), native push notifications & Supabase auto-save
+// Robust Countdown Timer (useRef + timestamp), Dropdown Layering & Persistent State
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Radio, Loader2, Bell, BellRing, ChevronDown, Check } from "lucide-react";
+import { Radio, Loader2, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { playTradeChime } from "@/hooks/useAudioAlert";
 import {
@@ -28,23 +27,56 @@ const INTERVAL_OPTIONS = [
 ] as const;
 
 export function AutoMonitorToggle() {
-  const { state, addToast, saveCurrentSignal } = useDashboardStore();
+  const { state, addToast } = useDashboardStore();
   const { tickers, goldTicker, tradeMode, apiSettings, authUser } = state;
 
-  const [isEnabled, setIsEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState<5 | 15 | 30>(5);
+  // 1. Persistent State Initialization from localStorage
+  const [isEnabled, setIsEnabled] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("auto_monitor_active") === "true";
+    }
+    return false;
+  });
+
+  const [intervalMinutes, setIntervalMinutes] = useState<5 | 15 | 30>(() => {
+    if (typeof window !== "undefined") {
+      const saved = Number(localStorage.getItem("auto_monitor_interval"));
+      if (saved === 5 || saved === 15 || saved === 30) return saved as 5 | 15 | 30;
+    }
+    return 5;
+  });
+
   const [isScanning, setIsScanning] = useState(false);
-  const [secondsRemaining, setSecondsRemaining] = useState(300);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(intervalMinutes * 60);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [notificationState, setNotificationState] = useState<string>("default");
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  // Persistent Refs for Target Timestamp & Timer (Prevents reset on state/ticker ticks)
+  const targetTimeRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Check notification permission on mount
+  // Close dropdown on click outside
   useEffect(() => {
-    setNotificationState(getNotificationPermission());
-  }, []);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showDropdown]);
+
+  // Sync state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("auto_monitor_active", String(isEnabled));
+      localStorage.setItem("auto_monitor_interval", String(intervalMinutes));
+    } catch {}
+  }, [isEnabled, intervalMinutes]);
 
   // Scan cycle executor
   const executeScanCycle = useCallback(async () => {
@@ -52,7 +84,7 @@ export function AutoMonitorToggle() {
     setIsScanning(true);
 
     try {
-      // 1. Gather scan candidates: Top 3 cryptos by RVOL + Gold
+      // Gather scan candidates: Top 3 cryptos by RVOL + Gold
       const candidates: Array<{
         symbol: string;
         market: "crypto" | "gold";
@@ -135,7 +167,7 @@ export function AutoMonitorToggle() {
               }
 
               addToast(
-                `🚨 رصدت المراقبة التلقائية فرصة مؤسساتية مؤكدة: ${rec.symbol} (${score}%)`,
+                `🚨 رصدت المراقبة التلقائية فرصة مؤكدة: ${rec.symbol} (${score}%)`,
                 "success",
               );
             }
@@ -146,12 +178,10 @@ export function AutoMonitorToggle() {
       }
 
       if (detectedHighConfluence === 0) {
-        // Silent or gentle toast
-        console.log("[AutoMonitor] Scan completed: No high-confluence setups found (stay in cash)");
+        console.log("[AutoMonitor] Scan completed: No high-confluence setups (stay in cash)");
       }
     } finally {
       setIsScanning(false);
-      setSecondsRemaining(intervalMinutes * 60);
     }
   }, [
     isScanning,
@@ -160,57 +190,89 @@ export function AutoMonitorToggle() {
     tradeMode,
     apiSettings,
     authUser,
-    intervalMinutes,
     addToast,
   ]);
 
-  // Interval & countdown controller
+  // Keep latest executeScanCycle in a stable ref to avoid restarting the timer when tickers change
+  const executeScanCycleRef = useRef(executeScanCycle);
+  useEffect(() => {
+    executeScanCycleRef.current = executeScanCycle;
+  }, [executeScanCycle]);
+
+  // ── Bulletproof Countdown Controller (Issue 1 Fix) ──
   useEffect(() => {
     if (!isEnabled) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+      targetTimeRef.current = null;
+      setSecondsRemaining(intervalMinutes * 60);
       return;
     }
 
-    setSecondsRemaining(intervalMinutes * 60);
+    // Initialize or recalculate target timestamp if not set
+    if (!targetTimeRef.current || targetTimeRef.current <= Date.now()) {
+      targetTimeRef.current = Date.now() + intervalMinutes * 60 * 1000;
+      setSecondsRemaining(intervalMinutes * 60);
+      // Run initial check on start
+      executeScanCycleRef.current();
+    }
 
-    // Initial scan when enabled
-    executeScanCycle();
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
 
-    // Countdown interval
-    countdownRef.current = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          executeScanCycle();
-          return intervalMinutes * 60;
-        }
-        return prev - 1;
-      });
+    countdownIntervalRef.current = setInterval(() => {
+      if (!targetTimeRef.current) return;
+
+      const remaining = Math.max(0, Math.ceil((targetTimeRef.current - Date.now()) / 1000));
+      setSecondsRemaining(remaining);
+
+      if (remaining <= 0) {
+        // Schedule next cycle timestamp
+        targetTimeRef.current = Date.now() + intervalMinutes * 60 * 1000;
+        setSecondsRemaining(intervalMinutes * 60);
+        executeScanCycleRef.current();
+      }
     }, 1000);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
     };
-  }, [isEnabled, intervalMinutes, executeScanCycle]);
+  }, [isEnabled, intervalMinutes]);
 
   const handleToggle = async () => {
     if (!isEnabled) {
       // Request notifications permission if not granted
       const perm = await requestNotificationPermission();
-      setNotificationState(perm);
       if (perm === "granted") {
         addToast("تم تفعيل إشعارات الويب وسطح المكتب بنجاح! 🔔", "success");
       }
+      targetTimeRef.current = Date.now() + intervalMinutes * 60 * 1000;
+      setSecondsRemaining(intervalMinutes * 60);
       setIsEnabled(true);
       addToast(
-        `تم تفعيل وضع المراقبة التلقائية كل ${intervalMinutes} دقائق 📡`,
+        `🟢 المراقبة تعمل الآن (فحص تلقائي كل ${intervalMinutes} دقائق)`,
         "info",
       );
     } else {
       setIsEnabled(false);
+      targetTimeRef.current = null;
+      setSecondsRemaining(intervalMinutes * 60);
       addToast("تم إيقاف وضع المراقبة التلقائية", "info");
     }
+  };
+
+  const handleSelectInterval = (val: 5 | 15 | 30) => {
+    setIntervalMinutes(val);
+    targetTimeRef.current = Date.now() + val * 60 * 1000;
+    setSecondsRemaining(val * 60);
+    setShowDropdown(false);
+    addToast(`تم ضبط فترة المراقبة التلقائية إلى ${val} دقائق`, "info");
   };
 
   const formatCountdown = (secs: number) => {
@@ -220,19 +282,23 @@ export function AutoMonitorToggle() {
   };
 
   return (
-    <div className="relative inline-flex items-center gap-1">
+    <div className="relative z-50 inline-flex items-center gap-1">
       {/* Main Toggle Button */}
       <Button
         variant="outline"
         size="sm"
         onClick={handleToggle}
         className={cn(
-          "h-8 px-2 sm:px-2.5 text-xs font-semibold gap-1.5 transition-all duration-300",
+          "h-8 px-2 sm:px-2.5 text-xs font-semibold gap-1.5 transition-all duration-300 cursor-pointer",
           isEnabled
-            ? "bg-[#10B981]/15 text-[#10B981] border-[#10B981]/50 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+            ? "bg-[#10B981]/15 text-[#10B981] border-[#10B981]/50 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
             : "bg-[#0A0D14] text-[#94A3B8] border-[#1E293B] hover:text-[#E2E8F0] hover:border-[#8B5CF6]/50",
         )}
-        title="وضع المراقبة التلقائية المستمرة وإرسال إشعارات فورية بالصفقات القوية"
+        title={
+          isEnabled
+            ? `🟢 المراقبة تعمل الآن (فحص تلقائي كل ${intervalMinutes} دقائق) - باقي: ${formatCountdown(secondsRemaining)}`
+            : `وضع المراقبة التلقائية المستمرة (فحص كل ${intervalMinutes} دقائق)`
+        }
       >
         {isScanning ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-[#10B981]" />
@@ -245,31 +311,33 @@ export function AutoMonitorToggle() {
           <Radio className="h-3.5 w-3.5" />
         )}
 
-        <span className="hidden sm:inline">📡 المراقبة التلقائية</span>
-        <span className="sm:hidden">📡 مراقبة</span>
+        <span className="hidden sm:inline">
+          {isEnabled ? "📡 المراقبة تعمل" : "📡 المراقبة التلقائية"}
+        </span>
+        <span className="sm:hidden">{isEnabled ? "📡 نشط" : "📡 مراقبة"}</span>
 
         {isEnabled && (
-          <span className="font-mono text-[10px] text-[#A7F3D0] bg-[#10B981]/20 px-1 rounded">
+          <span className="font-mono text-[10px] text-[#A7F3D0] bg-[#10B981]/25 px-1.5 py-0.5 rounded font-bold">
             {formatCountdown(secondsRemaining)}
           </span>
         )}
       </Button>
 
-      {/* Interval Selector Dropdown */}
-      <div className="relative">
+      {/* Interval Selector Dropdown with high z-index and click-outside (Issue 2 Fix) */}
+      <div className="relative z-50" ref={dropdownRef}>
         <Button
           variant="outline"
           size="sm"
           onClick={() => setShowDropdown((v) => !v)}
-          className="h-8 px-1.5 text-[11px] font-mono text-[#94A3B8] border-[#1E293B] bg-[#0A0D14] hover:text-[#E2E8F0]"
-          title="تغيير فترة المراقبة التلقائية"
+          className="h-8 px-1.5 text-[11px] font-mono text-[#94A3B8] border-[#1E293B] bg-[#0A0D14] hover:text-[#E2E8F0] cursor-pointer"
+          title="تغيير فترة الفحص الدوري"
         >
           <span>{intervalMinutes}د</span>
           <ChevronDown className="h-3 w-3 ml-0.5 text-[#64748B]" />
         </Button>
 
         {showDropdown && (
-          <div className="absolute left-0 mt-1.5 w-32 bg-[#0F141C] border border-[#1E293B] rounded-xl shadow-2xl py-1 z-50">
+          <div className="absolute left-0 mt-1.5 w-36 bg-[#0F141C] border border-[#1E293B] rounded-xl shadow-2xl py-1 z-50 backdrop-blur-xl animate-fade-in">
             <div className="px-2.5 py-1 text-[10px] text-[#64748B] font-bold border-b border-[#1E293B]">
               فترة الفحص الدوري:
             </div>
@@ -277,15 +345,11 @@ export function AutoMonitorToggle() {
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => {
-                  setIntervalMinutes(opt.value);
-                  setSecondsRemaining(opt.value * 60);
-                  setShowDropdown(false);
-                }}
+                onClick={() => handleSelectInterval(opt.value)}
                 className={cn(
-                  "w-full text-right px-2.5 py-1.5 text-xs flex items-center justify-between hover:bg-[#1E293B]/50 transition-colors",
+                  "w-full text-right px-2.5 py-1.5 text-xs flex items-center justify-between hover:bg-[#1E293B]/70 transition-colors cursor-pointer",
                   intervalMinutes === opt.value
-                    ? "text-[#10B981] font-bold"
+                    ? "text-[#10B981] font-bold bg-[#10B981]/10"
                     : "text-[#E2E8F0]",
                 )}
               >
