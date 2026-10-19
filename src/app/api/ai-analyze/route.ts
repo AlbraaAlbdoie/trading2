@@ -20,6 +20,7 @@ import {
   AiModelOption,
   QuantMatrix,
   ConditionalTrigger,
+  ScenarioPlan,
 } from "@/lib/types";
 import { formatPrice } from "@/lib/utils";
 
@@ -38,13 +39,14 @@ STRICT EXECUTION RULES:
    - RVOL MUST be >= 1.3.
    - Price must NOT be directly hitting "lowest_low_20" support.
    - If ANY condition fails -> Return "NO_CLEAR_SETUP".
-4. Exact Price Compliance:
-   - You MUST use the pre-calculated "current_live_price", "Math_SL", and "Math_TP1" provided in the payload. Do NOT invent random target numbers.
-5. Actionable Conditional Trigger Plan for "NO_CLEAR_SETUP":
-   - When returning "NO_CLEAR_SETUP", you MUST include a "conditional_trigger" object detailing the exact breakout/breakdown conditions for the next potential trade:
-     * What specific price level must be broken above for a LONG trigger (use highest_high_20).
-     * What specific price level must be broken below for a SHORT trigger (use lowest_low_20).
-     * Clear Arabic summary explaining what price the trader should wait for to start the trade.
+4. Exact Price Compliance (Zero Hallucination):
+   - Rule: "entry_price" MUST strictly equal the provided "current_live_price" / "live_spot_price". No price hallucination or outdated historical levels allowed. All Stop Loss and Take Profit levels MUST strictly align with Math_SL and Math_TP1.
+5. Actionable Scenario Plan for "NO_CLEAR_SETUP":
+   - When returning "NO_CLEAR_SETUP", you MUST include a "scenario_plan" object:
+     * "market_bias": "صاعد منتظر" | "هابط منتظر" | "تذبذب عرضي حاد"
+     * "trigger_breakout_high": (use highest_high_20)
+     * "trigger_breakout_low": (use lowest_low_20)
+     * "next_action_arabic": Clear actionable Arabic instructions explaining what price the trader should wait for to enter.
 
 JSON OUTPUT FORMAT (Return pure valid JSON only, without markdown wraps or extra commentary):
 {
@@ -57,6 +59,12 @@ JSON OUTPUT FORMAT (Return pure valid JSON only, without markdown wraps or extra
   "take_profit_2": number,
   "risk_reward_ratio": "1:2.0",
   "reasoning_arabic": "شرح خبير التداول المالي باللغة العربية بناءً على الاتجاه والـ ATR والحجم الحقيقي والسيولة",
+  "scenario_plan": {
+    "market_bias": "صاعد منتظر" | "هابط منتظر" | "تذبذب عرضي حاد",
+    "trigger_breakout_high": number,
+    "trigger_breakout_low": number,
+    "next_action_arabic": "السعر يتذبذب داخل نطاق محدد. نوصي بانتظار إغلاق شمعة 15د فوق المستوى المحدد لتأكيد الشراء، أو كسر القاع للبيع."
+  },
   "conditional_trigger": {
     "expected_bias": "BULLISH_BREAKOUT" | "BEARISH_BREAKDOWN" | "RANGE_RETEST",
     "bullish_trigger": {
@@ -208,6 +216,32 @@ function computeConditionalTrigger(quantMatrix: QuantMatrix): ConditionalTrigger
   };
 }
 
+/** Calculate Actionable Scenario Plan for "NO_CLEAR_SETUP" (خطة التحرك القادمة) */
+function computeScenarioPlan(matrix: QuantMatrix): ScenarioPlan {
+  const bias: "صاعد منتظر" | "هابط منتظر" | "تذبذب عرضي حاد" =
+    matrix.trend === "STRONG_BULLISH"
+      ? "صاعد منتظر"
+      : matrix.trend === "STRONG_BEARISH"
+      ? "هابط منتظر"
+      : "تذبذب عرضي حاد";
+
+  let nextAction = "";
+  if (bias === "صاعد منتظر") {
+    nextAction = `السعر يميل للصعود ولكن السيولة الحالية (${matrix.rvol.toFixed(2)}x) غير كافية للدخول الآمن. نوصي بانتظار اختراق المقاومة $${formatPrice(matrix.highestHigh20)} مع إغلاق شمعة 15د لتأكيد الشراء، أو كسر القاع $${formatPrice(matrix.lowestLow20)} للبيع.`;
+  } else if (bias === "هابط منتظر") {
+    nextAction = `السعر يميل للهبوط تحت المتوسطات المتحركة (EMA 50 < EMA 200). نوصي بانتظار كسر الدعم $${formatPrice(matrix.lowestLow20)} مع إغلاق شمعة 15د لتأكيد البيع، أو اختراق القمة $${formatPrice(matrix.highestHigh20)} للانعكاس.`;
+  } else {
+    nextAction = `السعر يتذبذب داخل نطاق محدد بين $${formatPrice(matrix.lowestLow20)} و $${formatPrice(matrix.highestHigh20)}. نوصي بانتظار إغلاق شمعة 15د فوق المستوى المحدد لتأكيد الشراء، أو كسر القاع للبيع.`;
+  }
+
+  return {
+    market_bias: bias,
+    trigger_breakout_high: matrix.highestHigh20,
+    trigger_breakout_low: matrix.lowestLow20,
+    next_action_arabic: nextAction,
+  };
+}
+
 /** Deterministic Quant Fallback Engine */
 function generateDeterministicQuantRecommendation(
   symbol: string,
@@ -219,6 +253,7 @@ function generateDeterministicQuantRecommendation(
     quantMatrix;
 
   const conditionalTrigger = computeConditionalTrigger(quantMatrix);
+  const scenarioPlan = computeScenarioPlan(quantMatrix);
 
   // 1. Guard against BTC dump
   if (btcDumpRisk) {
@@ -239,6 +274,7 @@ function generateDeterministicQuantRecommendation(
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
       conditional_trigger: conditionalTrigger,
+      scenario_plan: scenarioPlan,
     };
   }
 
@@ -261,6 +297,7 @@ function generateDeterministicQuantRecommendation(
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
       conditional_trigger: conditionalTrigger,
+      scenario_plan: scenarioPlan,
     };
   }
 
@@ -283,6 +320,7 @@ function generateDeterministicQuantRecommendation(
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
       conditional_trigger: conditionalTrigger,
+      scenario_plan: scenarioPlan,
     };
   }
 
@@ -475,7 +513,8 @@ export async function POST(req: Request) {
     // ── Step 4: Construct Rigorous Institutional Prompt Payload ──
     const userPrompt = `
 Quantitative Mathematical Data Matrix for Asset: ${symbol} (${isGold ? "Gold Spot XAU/USD" : tradeMode === "futures" ? "Crypto Futures" : "Crypto Spot"})
-Current Live Price Anchor: ${quantMatrix.currentLivePrice}
+Current Live Spot Price Anchor (live_spot_price): ${quantMatrix.currentLivePrice}
+STRICT RULE: "entry_price" MUST strictly equal live_spot_price (${quantMatrix.currentLivePrice}). No price guessing allowed.
 
 1. Trend Classification (1H Timeframe):
 - Trend: ${quantMatrix.trend}
@@ -574,6 +613,9 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3,
         parsed.risk_reward_ratio = "0:0";
         if (!parsed.conditional_trigger || !parsed.conditional_trigger.bullish_trigger) {
           parsed.conditional_trigger = computeConditionalTrigger(quantMatrix);
+        }
+        if (!parsed.scenario_plan || !parsed.scenario_plan.trigger_breakout_high) {
+          parsed.scenario_plan = computeScenarioPlan(quantMatrix);
         }
         if (parsed.conditional_trigger && parsed.reasoning_arabic && !parsed.reasoning_arabic.includes(parsed.conditional_trigger.summary_arabic)) {
           parsed.reasoning_arabic += ` | ${parsed.conditional_trigger.summary_arabic}`;

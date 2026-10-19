@@ -141,6 +141,14 @@ export interface ConditionalTrigger {
   summary_arabic: string;
 }
 
+/** Advanced Scenario Plan for NO_CLEAR_SETUP (خطة التحرك القادمة) */
+export interface ScenarioPlan {
+  market_bias: "صاعد منتظر" | "هابط منتظر" | "تذبذب عرضي حاد";
+  trigger_breakout_high: number;
+  trigger_breakout_low: number;
+  next_action_arabic: string;
+}
+
 /** AI Trade Recommendation Schema (Strict Output) */
 export interface AiTradeRecommendation {
   status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
@@ -160,6 +168,7 @@ export interface AiTradeRecommendation {
   bullet_signal?: BulletSignal;
   quant_matrix?: QuantMatrix;
   conditional_trigger?: ConditionalTrigger;
+  scenario_plan?: ScenarioPlan;
 }
 
 /** Trade History Journal Entry */

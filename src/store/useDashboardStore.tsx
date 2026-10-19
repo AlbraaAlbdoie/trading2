@@ -395,7 +395,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   // Supabase Keep-Alive Guard (Trigger database query to prevent free tier pause)
   useEffect(() => {
-    fetch("/api/supabase-ping").catch(() => {});
+    fetch("/api/cron/keep-alive").catch(() => {});
   }, []);
 
   // Load API settings and Trade Journal from localStorage

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AutoMonitorToggle } from "@/components/AutoMonitorToggle";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { playTradeChime } from "@/hooks/useAudioAlert";
 import { cn, formatPrice, formatPercent } from "@/lib/utils";
@@ -155,6 +156,9 @@ export function TopNavBar() {
 
         {/* Controls Bar */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* 📡 Auto Monitor Mode Toggle */}
+          <AutoMonitorToggle />
+
           {/* 📂 Saved Signals Drawer Button */}
           <Button
             variant="outline"

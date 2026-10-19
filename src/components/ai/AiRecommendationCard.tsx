@@ -31,7 +31,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDashboardStore } from "@/store/useDashboardStore";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, cn } from "@/lib/utils";
 import { playTradeChime } from "@/hooks/useAudioAlert";
 
 export function AiRecommendationCard() {
@@ -332,6 +332,49 @@ export function AiRecommendationCard() {
                 {rec.reasoning_arabic}
               </p>
             </div>
+
+            {/* Interactive Scenario Plan Card (خطة التحرك القادمة) */}
+            {rec.scenario_plan && (
+              <div className="p-3 rounded-xl bg-[#0F172A]/80 border border-[#8B5CF6]/40 shadow-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#A78BFA]">
+                    <Target className="h-4 w-4 text-[#8B5CF6]" />
+                    <span>خطة التحرك القادمة (Scenario Plan):</span>
+                  </div>
+                  <Badge
+                    className={cn(
+                      "text-[10px] px-2 py-0.5 font-bold border",
+                      rec.scenario_plan.market_bias === "صاعد منتظر"
+                        ? "bg-[#10B981]/15 text-[#10B981] border-[#10B981]/30"
+                        : rec.scenario_plan.market_bias === "هابط منتظر"
+                        ? "bg-[#F43F5E]/15 text-[#F43F5E] border-[#F43F5E]/30"
+                        : "bg-[#F59E0B]/15 text-[#F59E0B] border-[#F59E0B]/30",
+                    )}
+                  >
+                    {rec.scenario_plan.market_bias}
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="bg-[#080C14] p-2 rounded-lg border border-[#1E293B]">
+                    <span className="text-[10px] text-[#64748B] block">مستوى اختراق القمة:</span>
+                    <span className="text-[#10B981] font-bold">
+                      ${formatPrice(rec.scenario_plan.trigger_breakout_high)}
+                    </span>
+                  </div>
+                  <div className="bg-[#080C14] p-2 rounded-lg border border-[#1E293B]">
+                    <span className="text-[10px] text-[#64748B] block">مستوى كسر القاع:</span>
+                    <span className="text-[#F43F5E] font-bold">
+                      ${formatPrice(rec.scenario_plan.trigger_breakout_low)}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#CBD5E1] bg-[#080C14]/60 p-2 rounded-lg border border-[#1E293B]/60 leading-relaxed">
+                  {rec.scenario_plan.next_action_arabic}
+                </p>
+              </div>
+            )}
 
             {/* Conditional Triggers & Action Plan (خطة الدخول المشروطة) */}
             {rec.conditional_trigger && (
