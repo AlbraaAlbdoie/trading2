@@ -393,6 +393,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, [state.authUser, fetchSavedSignals]);
 
+  // Supabase Keep-Alive Guard (Trigger database query to prevent free tier pause)
+  useEffect(() => {
+    fetch("/api/supabase-ping").catch(() => {});
+  }, []);
+
   // Load API settings and Trade Journal from localStorage
   useEffect(() => {
     try {
@@ -688,7 +693,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           symbolToAnalyze === "XAU/USD" ||
           symbolToAnalyze.includes("XAU")
         ) {
-          currentPrice = state.goldTicker ? state.goldTicker.price : 2687.50;
+          currentPrice = state.goldTicker ? state.goldTicker.price : 4148.50;
         } else {
           const coin = state.tickers.find((t) => t.symbol === symbolToAnalyze);
           if (coin) {

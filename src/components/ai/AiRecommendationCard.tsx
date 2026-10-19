@@ -333,6 +333,91 @@ export function AiRecommendationCard() {
               </p>
             </div>
 
+            {/* Conditional Triggers & Action Plan (خطة الدخول المشروطة) */}
+            {rec.conditional_trigger && (
+              <div className="p-3 rounded-xl bg-[#0B0F19] border border-[#3B82F6]/30 shadow-lg space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#60A5FA]">
+                    <Crosshair className="h-4 w-4 text-[#3B82F6]" />
+                    <span>خطة وسيناريوهات الدخول المشروطة (Trigger Plan):</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-[#1E293B] text-[#94A3B8]">
+                    {rec.conditional_trigger.expected_bias === "BULLISH_BREAKOUT"
+                      ? "ميول صعودي بعد كسر المقاومة"
+                      : rec.conditional_trigger.expected_bias === "BEARISH_BREAKDOWN"
+                      ? "ميول هبوطي بعد كسر الدعم"
+                      : "نطاق عرضي محايد"}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+                  {rec.conditional_trigger.summary_arabic}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono">
+                  {/* Bullish Trigger Scenario */}
+                  <div className="bg-[#0D1524] p-2.5 rounded-lg border border-[#10B981]/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-[#10B981]">
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                        <span>سيناريو الشراء (LONG)</span>
+                      </div>
+                      <Badge className="bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30 text-[9px] px-1.5 py-0">
+                        كسر القمة
+                      </Badge>
+                    </div>
+                    <div className="text-[10px] space-y-1 text-[#CBD5E1]">
+                      <div className="flex justify-between">
+                        <span className="text-[#64748B]">شرط التفعيل:</span>
+                        <span className="font-bold text-[#E2E8F0]">
+                          ${formatPrice(rec.conditional_trigger.bullish_trigger.price)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#64748B]">الهدف المتوقع:</span>
+                        <span className="font-bold text-[#10B981]">
+                          ${formatPrice(rec.conditional_trigger.bullish_trigger.target)}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-[#94A3B8] pt-1 border-t border-[#1E293B] leading-tight">
+                        {rec.conditional_trigger.bullish_trigger.condition}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bearish Trigger Scenario */}
+                  <div className="bg-[#1A0F17] p-2.5 rounded-lg border border-[#F43F5E]/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-[#F43F5E]">
+                        <ArrowDownRight className="h-3.5 w-3.5" />
+                        <span>سيناريو البيع (SHORT)</span>
+                      </div>
+                      <Badge className="bg-[#F43F5E]/10 text-[#F43F5E] border-[#F43F5E]/30 text-[9px] px-1.5 py-0">
+                        كسر القاع
+                      </Badge>
+                    </div>
+                    <div className="text-[10px] space-y-1 text-[#CBD5E1]">
+                      <div className="flex justify-between">
+                        <span className="text-[#64748B]">شرط التفعيل:</span>
+                        <span className="font-bold text-[#E2E8F0]">
+                          ${formatPrice(rec.conditional_trigger.bearish_trigger.price)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#64748B]">الهدف المتوقع:</span>
+                        <span className="font-bold text-[#F43F5E]">
+                          ${formatPrice(rec.conditional_trigger.bearish_trigger.target)}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-[#94A3B8] pt-1 border-t border-[#1E293B] leading-tight">
+                        {rec.conditional_trigger.bearish_trigger.condition}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8] bg-[#0A0D12] p-2 rounded-lg border border-[#1E293B]">
               <ShieldCheck className="h-3.5 w-3.5 text-[#10B981] shrink-0" />
               <span>القاعدة الذهبية: في 80% - 90% من ظروف السوق، الامتناع عن التداول هو العامل الأساسي لنمو المحفظة.</span>

@@ -23,34 +23,52 @@ import { cn, formatPrice, formatPercent, isGoldMarketWeekendClosed, getForexMark
 import type { GoldTickerData } from "@/lib/types";
 
 function useGoldPrice(): GoldTickerData {
+  const { updateGoldTicker } = useDashboardStore();
   const [data, setData] = useState<GoldTickerData>({
     symbol: "XAUUSD",
     displayName: "XAU/USD",
-    price: 2685.42,
-    change24h: 0.67,
-    high24h: 2698.10,
-    low24h: 2671.35,
-    volume: "18.2B$",
+    price: 4148.50,
+    change24h: -0.41,
+    high24h: 4190.10,
+    low24h: 4137.00,
+    volume: "28.4B$",
     lastUpdate: Date.now(),
-    priceDirection: "up",
+    priceDirection: "down",
   });
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setData((prev) => {
-        const delta = (Math.random() - 0.48) * 1.8;
-        const newPrice = Math.max(2500, prev.price + delta);
-        return {
-          ...prev,
-          price: Math.round(newPrice * 100) / 100,
-          priceDirection: delta > 0 ? "up" : delta < 0 ? "down" : "neutral",
-          lastUpdate: Date.now(),
-        };
-      });
-    }, 3500);
+    let mounted = true;
 
-    return () => clearInterval(interval);
-  }, []);
+    async function fetchLiveGold() {
+      try {
+        const res = await fetch("/api/gold-price");
+        if (res.ok && mounted) {
+          const fresh = await res.json();
+          if (fresh && fresh.price > 0) {
+            setData((prev) => {
+              const direction =
+                fresh.price > prev.price ? "up" : fresh.price < prev.price ? "down" : prev.priceDirection;
+              const updated: GoldTickerData = {
+                ...fresh,
+                priceDirection: direction,
+              };
+              updateGoldTicker(updated);
+              return updated;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[GoldPanel] Live price fetch error:", err);
+      }
+    }
+
+    fetchLiveGold();
+    const interval = setInterval(fetchLiveGold, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [updateGoldTicker]);
 
   return data;
 }
@@ -148,11 +166,11 @@ export function GoldPanel() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <LevelRow label="مقاومة رئيسية (R2)" price={2725.0} type="resistance" />
-            <LevelRow label="مقاومة أولى (R1)" price={2700.0} type="resistance" />
-            <LevelRow label="السعر الفوري الحالي" price={gold.price} type="current" />
-            <LevelRow label="دعم أول (S1)" price={2665.0} type="support" />
-            <LevelRow label="دعم رئيسي (S2)" price={2640.0} type="support" />
+            <LevelRow label="مقاومة رئيسية (R2)" price={Math.round((gold.price + 36.5) * 100) / 100} type="resistance" />
+            <LevelRow label="مقاومة أولى (R1)" price={Math.round((gold.price + 18.2) * 100) / 100} type="resistance" />
+            <LevelRow label="السعر الفوري الحالي (TVC:GOLD)" price={gold.price} type="current" />
+            <LevelRow label="دعم أول (S1)" price={Math.round((gold.price - 18.2) * 100) / 100} type="support" />
+            <LevelRow label="دعم رئيسي (S2)" price={Math.round((gold.price - 36.5) * 100) / 100} type="support" />
           </div>
         </CardContent>
       </Card>

@@ -13,13 +13,15 @@ import {
 import { computeQuantMatrix } from "@/lib/quantEngine";
 import { calculateBulletSignal } from "@/lib/bulletStrategy";
 import { isGoldMarketWeekendClosed } from "@/lib/utils";
-import type {
+import {
   AiAnalysisRequest,
   AiTradeRecommendation,
   CandleData,
   AiModelOption,
   QuantMatrix,
+  ConditionalTrigger,
 } from "@/lib/types";
+import { formatPrice } from "@/lib/utils";
 
 const SYSTEM_QUANT_PROMPT = `You are the Chief Risk Officer of a $100M Quantitative Crypto & Gold Fund. Your primary goal is CAPITAL PRESERVATION, not taking random trades.
 
@@ -38,6 +40,11 @@ STRICT EXECUTION RULES:
    - If ANY condition fails -> Return "NO_CLEAR_SETUP".
 4. Exact Price Compliance:
    - You MUST use the pre-calculated "current_live_price", "Math_SL", and "Math_TP1" provided in the payload. Do NOT invent random target numbers.
+5. Actionable Conditional Trigger Plan for "NO_CLEAR_SETUP":
+   - When returning "NO_CLEAR_SETUP", you MUST include a "conditional_trigger" object detailing the exact breakout/breakdown conditions for the next potential trade:
+     * What specific price level must be broken above for a LONG trigger (use highest_high_20).
+     * What specific price level must be broken below for a SHORT trigger (use lowest_low_20).
+     * Clear Arabic summary explaining what price the trader should wait for to start the trade.
 
 JSON OUTPUT FORMAT (Return pure valid JSON only, without markdown wraps or extra commentary):
 {
@@ -49,7 +56,23 @@ JSON OUTPUT FORMAT (Return pure valid JSON only, without markdown wraps or extra
   "take_profit_1": number,
   "take_profit_2": number,
   "risk_reward_ratio": "1:2.0",
-  "reasoning_arabic": "شرح خبير التداول المالي باللغة العربية بناءً على الاتجاه والـ ATR والحجم الحقيقي والسيولة"
+  "reasoning_arabic": "شرح خبير التداول المالي باللغة العربية بناءً على الاتجاه والـ ATR والحجم الحقيقي والسيولة",
+  "conditional_trigger": {
+    "expected_bias": "BULLISH_BREAKOUT" | "BEARISH_BREAKDOWN" | "RANGE_RETEST",
+    "bullish_trigger": {
+      "price": number,
+      "condition": "اختراق القمة الحالية ...",
+      "target": number,
+      "action": "LONG"
+    },
+    "bearish_trigger": {
+      "price": number,
+      "condition": "كسر القاع الحالي ...",
+      "target": number,
+      "action": "SHORT"
+    },
+    "summary_arabic": "خطة الترقب: ننتظر صعود السعر لاختراق مستوى ... أو هبوطه لكسر مستوى ..."
+  }
 }`;
 
 /** Call Google Gemini 2.0 Flash via standard REST */
@@ -145,6 +168,46 @@ function cleanAndParseJson<T>(raw: string): T {
   return JSON.parse(cleaned) as T;
 }
 
+/** Calculate exact mathematical conditional trigger plan for NO_CLEAR_SETUP states */
+function computeConditionalTrigger(quantMatrix: QuantMatrix): ConditionalTrigger {
+  const { currentLivePrice, highestHigh20, lowestLow20, atr14, trend } = quantMatrix;
+
+  const bullTrigger =
+    highestHigh20 > currentLivePrice
+      ? highestHigh20
+      : Math.round((currentLivePrice + 1.2 * atr14) * 100) / 100;
+  const bullTarget = Math.round((bullTrigger + 2.0 * atr14) * 100) / 100;
+
+  const bearTrigger =
+    lowestLow20 < currentLivePrice
+      ? lowestLow20
+      : Math.round((currentLivePrice - 1.2 * atr14) * 100) / 100;
+  const bearTarget = Math.round((bearTrigger - 2.0 * atr14) * 100) / 100;
+
+  let bias: "BULLISH_BREAKOUT" | "BEARISH_BREAKDOWN" | "RANGE_RETEST" = "RANGE_RETEST";
+  if (trend === "STRONG_BULLISH") bias = "BULLISH_BREAKOUT";
+  else if (trend === "STRONG_BEARISH") bias = "BEARISH_BREAKDOWN";
+
+  const summary = `خطة الترقب المشروطة: السعر حالياً عند $${formatPrice(currentLivePrice)}. للشراء (LONG): ننتظر اختراق القمة $${formatPrice(bullTrigger)} مع إغلاق شمعة وسيولة مؤكدة لاستهداف $${formatPrice(bullTarget)}. للبيع (SHORT): ننتظر كسر القاع $${formatPrice(bearTrigger)} لاستهداف $${formatPrice(bearTarget)}.`;
+
+  return {
+    expected_bias: bias,
+    bullish_trigger: {
+      price: bullTrigger,
+      condition: `صعود واختراق مستوى القمة $${formatPrice(bullTrigger)} مع إغلاق شمعة 15د وحجم مؤكد (RVOL ≥ 1.3)`,
+      target: bullTarget,
+      action: "LONG",
+    },
+    bearish_trigger: {
+      price: bearTrigger,
+      condition: `هبوط وكسر مستوى القاع $${formatPrice(bearTrigger)} مع ضغط بيعي وإغلاق شمعة 15د أسفله`,
+      target: bearTarget,
+      action: "SHORT",
+    },
+    summary_arabic: summary,
+  };
+}
+
 /** Deterministic Quant Fallback Engine */
 function generateDeterministicQuantRecommendation(
   symbol: string,
@@ -154,6 +217,8 @@ function generateDeterministicQuantRecommendation(
 ): AiTradeRecommendation {
   const { currentLivePrice, trend, rvol, highestHigh20, lowestLow20, longLevels, shortLevels } =
     quantMatrix;
+
+  const conditionalTrigger = computeConditionalTrigger(quantMatrix);
 
   // 1. Guard against BTC dump
   if (btcDumpRisk) {
@@ -169,10 +234,11 @@ function generateDeterministicQuantRecommendation(
       take_profit_2: currentLivePrice,
       risk_reward_ratio: "0:0",
       reasoning_arabic:
-        "حارس البيتكوين رصد هبوطاً حاداً وغير مستقر في حركة السوق. وفقاً لقواعد إدارة المخاطر الصارمة، يُمنع فتح أي مراكز ويجب البقاء كاش خارج السوق لحماية رأس المال.",
+        `حارس البيتكوين رصد هبوطاً حاداً وغير مستقر في حركة السوق. وفقاً لقواعد إدارة المخاطر، البقاء كاش خارج السوق هو الخيار السليم. ${conditionalTrigger.summary_arabic}`,
       btc_warning: "سوق البيتكوين في حالة هبوط سريع",
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
+      conditional_trigger: conditionalTrigger,
     };
   }
 
@@ -190,10 +256,11 @@ function generateDeterministicQuantRecommendation(
       take_profit_2: currentLivePrice,
       risk_reward_ratio: "0:0",
       reasoning_arabic:
-        "السوق يتحرك في نطاق عرضي متذبذب أسفل EMA 50 أو بتداخل المتوسطات (EMA 50 / EMA 200). غياب الاتجاه المؤسساتي يرفع احتمالية الخسارة؛ القاعدة الذهبية تفرض البقاء خارج السوق.",
+        `السوق يتحرك في نطاق عرضي متذبذب بتداخل المتوسطات (EMA 50 / EMA 200). غياب الاتجاه المؤسساتي يفرض البقاء كاش. ${conditionalTrigger.summary_arabic}`,
       btc_warning: null,
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
+      conditional_trigger: conditionalTrigger,
     };
   }
 
@@ -210,10 +277,12 @@ function generateDeterministicQuantRecommendation(
       take_profit_1: currentLivePrice,
       take_profit_2: currentLivePrice,
       risk_reward_ratio: "0:0",
-      reasoning_arabic: `حجم التداول الحالي ضعيف جداً مقارنة بمتوسط 20 شمعة سابقة (RVOL = ${rvol.toFixed(2)}). الدخول في ظل سيولة منخفضة يعرض الصفقة لكسور وهمية وفخاخ صناع السوق.`,
+      reasoning_arabic:
+        `حجم التداول الحالي ضعيف جداً (RVOL = ${rvol.toFixed(2)}). الدخول الآن يعرض الصفقة لكسور وهمية. ${conditionalTrigger.summary_arabic}`,
       btc_warning: null,
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
+      conditional_trigger: conditionalTrigger,
     };
   }
 
@@ -274,10 +343,11 @@ function generateDeterministicQuantRecommendation(
     take_profit_2: currentLivePrice,
     risk_reward_ratio: "0:0",
     reasoning_arabic:
-      "السعر يقترب بشكل حرج من قمة أو قاع النطاق (Swing Levels) بدون مساحة كافية للعائد مقابل المخاطرة. يُفضل انتظار كسر صريح أو ارتداد مؤكد.",
+      `السعر يقترب بشكل حرج من قمة أو قاع النطاق (Swing Levels) بدون مساحة كافية للعائد مقابل المخاطرة. يُفضل انتظار كسر صريح أو ارتداد مؤكد. ${conditionalTrigger.summary_arabic}`,
     btc_warning: null,
     timestamp: Date.now(),
     quant_matrix: quantMatrix,
+    conditional_trigger: conditionalTrigger,
   };
 }
 
@@ -330,9 +400,38 @@ export async function POST(req: Request) {
     let btcDumpRisk = false;
 
     if (isGold) {
-      const goldBase = rawProvidedPrice || 2687.50;
-      candles1h = generateSyntheticGoldKlines(goldBase, 250);
-      candles15m = generateSyntheticGoldKlines(goldBase, 50);
+      let goldBase = rawProvidedPrice;
+      if (!goldBase || goldBase < 1000) {
+        try {
+          const goldApiKey =
+            apiSettings?.goldKey ||
+            process.env.NEXT_PUBLIC_GOLD_API_KEY ||
+            "91e8dace85b3450ba3ed3257529e155f";
+          const res = await fetch(
+            `https://api.twelvedata.com/price?symbol=XAU/USD&apikey=${goldApiKey}`,
+            { next: { revalidate: 10 } },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.price) goldBase = parseFloat(data.price);
+          }
+        } catch {}
+      }
+      if (!goldBase || goldBase < 1000) {
+        try {
+          const binanceRes = await fetch(
+            "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
+            { next: { revalidate: 10 } },
+          );
+          if (binanceRes.ok) {
+            const data = await binanceRes.json();
+            if (data?.price) goldBase = parseFloat(data.price);
+          }
+        } catch {}
+      }
+      const finalGoldRate = goldBase && goldBase > 1000 ? goldBase : 4148.50;
+      candles1h = generateSyntheticGoldKlines(finalGoldRate, 250);
+      candles15m = generateSyntheticGoldKlines(finalGoldRate, 50);
     } else {
       const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       try {
@@ -353,7 +452,7 @@ export async function POST(req: Request) {
     const quantMatrix: QuantMatrix = computeQuantMatrix(
       candles1h,
       candles15m,
-      rawProvidedPrice || undefined,
+      isGold ? candles15m[candles15m.length - 1].close : (rawProvidedPrice || undefined),
     );
 
     // Compute Bullet Strategy as complementary confluence indicator
@@ -473,6 +572,12 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3,
         parsed.take_profit_1 = quantMatrix.currentLivePrice;
         parsed.take_profit_2 = quantMatrix.currentLivePrice;
         parsed.risk_reward_ratio = "0:0";
+        if (!parsed.conditional_trigger || !parsed.conditional_trigger.bullish_trigger) {
+          parsed.conditional_trigger = computeConditionalTrigger(quantMatrix);
+        }
+        if (parsed.conditional_trigger && parsed.reasoning_arabic && !parsed.reasoning_arabic.includes(parsed.conditional_trigger.summary_arabic)) {
+          parsed.reasoning_arabic += ` | ${parsed.conditional_trigger.summary_arabic}`;
+        }
       }
 
       return NextResponse.json(parsed);

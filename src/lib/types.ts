@@ -123,6 +123,24 @@ export interface QuantMatrix {
   };
 }
 
+/** Actionable Conditional Trigger Plan for Waiting/No-Setup States (خطة الدخول المشروطة) */
+export interface ConditionalTrigger {
+  expected_bias: "BULLISH_BREAKOUT" | "BEARISH_BREAKDOWN" | "RANGE_RETEST";
+  bullish_trigger: {
+    price: number;
+    condition: string;
+    target: number;
+    action: "LONG";
+  };
+  bearish_trigger: {
+    price: number;
+    condition: string;
+    target: number;
+    action: "SHORT";
+  };
+  summary_arabic: string;
+}
+
 /** AI Trade Recommendation Schema (Strict Output) */
 export interface AiTradeRecommendation {
   status: "LONG" | "SHORT" | "SPOT_BUY" | "NO_CLEAR_SETUP" | "MARKET_CLOSED";
@@ -141,6 +159,7 @@ export interface AiTradeRecommendation {
   timestamp: number;
   bullet_signal?: BulletSignal;
   quant_matrix?: QuantMatrix;
+  conditional_trigger?: ConditionalTrigger;
 }
 
 /** Trade History Journal Entry */
