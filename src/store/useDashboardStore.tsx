@@ -36,6 +36,7 @@ import {
   requestNotificationPermission,
   sendTradeSignalNotification,
 } from "@/lib/webNotifications";
+import { sendTelegramTradeAlert } from "@/lib/telegram";
 
 // ── Storage Keys ──────────────────────────────────────────────────────
 const STORAGE_KEY_SETTINGS = "nexus_alpha_api_settings";
@@ -593,6 +594,22 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
     // Send native web push notification
     sendTradeSignalNotification(mockRec);
+
+    // Send Telegram alert if token and chat ID are configured
+    const botToken =
+      state.apiSettings.telegramBotToken ||
+      DEFAULT_API_KEYS.telegramBotToken ||
+      (typeof window !== "undefined" ? localStorage.getItem("telegram_bot_token") : null);
+    const chatId =
+      state.apiSettings.telegramChatId ||
+      DEFAULT_API_KEYS.telegramChatId ||
+      (typeof window !== "undefined" ? localStorage.getItem("telegram_chat_id") : null);
+
+    if (botToken && chatId) {
+      sendTelegramTradeAlert(botToken, chatId, mockRec).catch((err) => {
+        console.warn("[TestPipeline] Telegram test alert notice:", err);
+      });
+    }
 
     // 4. Auto-save mock signal to Supabase
     const fallbackId = `sig_test_${Date.now()}`;

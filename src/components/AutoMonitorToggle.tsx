@@ -15,6 +15,8 @@ import {
   sendTradeSignalNotification,
   getNotificationPermission,
 } from "@/lib/webNotifications";
+import { sendTelegramTradeAlert } from "@/lib/telegram";
+import { DEFAULT_API_KEYS } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { AiTradeRecommendation } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -101,6 +103,15 @@ export function AutoMonitorToggle() {
 
               // Send native web push notification
               sendTradeSignalNotification(rec);
+
+              // Send Telegram trade alert
+              const botToken = apiSettings.telegramBotToken || DEFAULT_API_KEYS.telegramBotToken;
+              const chatId = apiSettings.telegramChatId || DEFAULT_API_KEYS.telegramChatId;
+              if (botToken && chatId) {
+                sendTelegramTradeAlert(botToken, chatId, rec).catch((tgErr) => {
+                  console.warn("[AutoMonitor] Telegram alert dispatch notice:", tgErr);
+                });
+              }
 
               // Auto save to Supabase if user is logged in
               if (authUser) {

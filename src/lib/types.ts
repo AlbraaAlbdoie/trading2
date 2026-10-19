@@ -43,6 +43,8 @@ export interface ApiSettingsConfig {
   openRouterKey: string;
   goldKey: string;
   selectedModel: AiModelOption;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 /** Standard Candlestick data */

@@ -496,8 +496,8 @@ export async function POST(req: Request) {
     // Compute Bullet Strategy as complementary confluence indicator
     const bulletSignal = calculateBulletSignal(candles15m);
 
-    // ── Step 3: Fast-Path No-Trade Checks (Save AI Tokens & Latency) ──
-    // If BTC is dumping or market is strictly Choppy, enforce Capital Preservation
+    // ── Step 3: Fast-Path No-Trade Checks & Smart Credit Saver ──
+    // If BTC is dumping, enforce Capital Preservation immediately
     if (btcDumpRisk && !isGold) {
       const btcAlertRec = generateDeterministicQuantRecommendation(
         symbol,
@@ -508,6 +508,20 @@ export async function POST(req: Request) {
       btcAlertRec.model_used = "BTC Dump Guard Engine";
       btcAlertRec.bullet_signal = bulletSignal;
       return NextResponse.json(btcAlertRec);
+    }
+
+    // Smart Credit Saver: If trend is Choppy or RVOL < 1.2 (low liquidity),
+    // mathematical confluence is < 70%. SKIP CALLING LLM API completely to preserve credits!
+    if (quantMatrix.trend === "CHOPPY_SIDEWAYS" || quantMatrix.rvol < 1.2) {
+      const creditSaverRec = generateDeterministicQuantRecommendation(
+        symbol,
+        quantMatrix,
+        false,
+        tradeMode,
+      );
+      creditSaverRec.model_used = "Deterministic Quant Engine (Smart Credit Saver)";
+      creditSaverRec.bullet_signal = bulletSignal;
+      return NextResponse.json(creditSaverRec);
     }
 
     // ── Step 4: Construct Rigorous Institutional Prompt Payload ──

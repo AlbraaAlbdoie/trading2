@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Key,
@@ -17,6 +17,8 @@ import {
   RotateCcw,
   Bell,
   BellRing,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,20 +26,45 @@ import { Badge } from "@/components/ui/badge";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { AI_MODELS, DEFAULT_API_KEYS } from "@/lib/constants";
 import { playTradeChime } from "@/hooks/useAudioAlert";
+import { testTelegramConnection } from "@/lib/telegram";
 import type { AiModelOption, ApiSettingsConfig } from "@/lib/types";
 
 export function SettingsModal() {
-  const { state, setIsSettingsOpen, setApiSettings, triggerTestSignalPipeline } = useDashboardStore();
+  const {
+    state,
+    setIsSettingsOpen,
+    setApiSettings,
+    addToast,
+    triggerTestSignalPipeline,
+  } = useDashboardStore();
   const { isSettingsOpen, apiSettings, audioEnabled } = state;
 
-  const [formData, setFormData] = useState<ApiSettingsConfig>(apiSettings);
+  const [formData, setFormData] = useState<ApiSettingsConfig>(() => {
+    return {
+      ...DEFAULT_API_KEYS,
+      ...apiSettings,
+      telegramBotToken:
+        apiSettings.telegramBotToken ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("telegram_bot_token") || DEFAULT_API_KEYS.telegramBotToken
+          : DEFAULT_API_KEYS.telegramBotToken),
+      telegramChatId:
+        apiSettings.telegramChatId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("telegram_chat_id") || DEFAULT_API_KEYS.telegramChatId
+          : DEFAULT_API_KEYS.telegramChatId),
+    };
+  });
+
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({
     gemini: false,
     groq: false,
     openRouter: false,
     gold: false,
+    telegramToken: false,
   });
   const [isSaved, setIsSaved] = useState(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
 
   if (!isSettingsOpen) return null;
 
@@ -45,8 +72,44 @@ export function SettingsModal() {
     setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleTestTelegram = async () => {
+    const token = formData.telegramBotToken?.trim() || "";
+    const chat = formData.telegramChatId?.trim() || "";
+
+    if (!token || !chat) {
+      addToast("يرجى إدخال رمز بوت تليجرام ومعرف المحادثة أولاً ⚠️", "error");
+      return;
+    }
+
+    setIsTestingTelegram(true);
+    try {
+      const result = await testTelegramConnection(token, chat);
+      if (result.success) {
+        addToast("✅ تم إرسال رسالة الاختبار بنجاح إلى حسابك في تليجرام!", "success");
+        if (audioEnabled) {
+          playTradeChime("high");
+        }
+      } else {
+        addToast(`❌ تعذر إرسال رسالة تليجرام: ${result.error || "تحقق من صحة الرمز والمعرف"}`, "error");
+      }
+    } catch (err) {
+      addToast("حدث خطأ أثناء فحص اتصال تليجرام", "error");
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
+
   const handleSave = () => {
     setApiSettings(formData);
+    try {
+      if (formData.telegramBotToken) {
+        localStorage.setItem("telegram_bot_token", formData.telegramBotToken);
+      }
+      if (formData.telegramChatId) {
+        localStorage.setItem("telegram_chat_id", formData.telegramChatId);
+      }
+    } catch {}
+
     setIsSaved(true);
     if (audioEnabled) {
       playTradeChime("high");
@@ -179,6 +242,72 @@ export function SettingsModal() {
               onToggleShow={() => toggleShow("gold")}
               onChange={(val) => setFormData((prev) => ({ ...prev, goldKey: val }))}
             />
+
+            {/* Telegram Bot Integration Section */}
+            <div className="bg-[#080C14] p-3 rounded-xl border border-[#06B6D4]/30 space-y-2.5 mt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#22D3EE]">
+                  <Send className="h-4 w-4 text-[#06B6D4]" />
+                  <span>تنبيهات بوت تليجرام الفورية (Telegram Bot):</span>
+                </div>
+                <Badge className="bg-[#06B6D4]/15 text-[#22D3EE] border-[#06B6D4]/30 text-[10px]">
+                  إشارات حية
+                </Badge>
+              </div>
+
+              {/* Bot Token Field */}
+              <ApiKeyField
+                label="رمز بوت تليجرام (Telegram Bot Token)"
+                provider="BotFather API Token"
+                value={formData.telegramBotToken || ""}
+                show={showKeys.telegramToken}
+                onToggleShow={() => toggleShow("telegramToken")}
+                onChange={(val) => {
+                  setFormData((prev) => ({ ...prev, telegramBotToken: val }));
+                  try {
+                    localStorage.setItem("telegram_bot_token", val);
+                  } catch {}
+                }}
+              />
+
+              {/* Chat ID Field */}
+              <div className="bg-[#080C14] p-2.5 rounded-xl border border-[#1E293B]">
+                <div className="flex items-center justify-between mb-1.5 text-xs">
+                  <span className="font-semibold text-[#E2E8F0]">معرف المحادثة (Telegram Chat ID)</span>
+                  <span className="text-[10px] text-[#64748B] font-mono">User/Channel ID</span>
+                </div>
+                <input
+                  type="text"
+                  value={formData.telegramChatId || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData((prev) => ({ ...prev, telegramChatId: val }));
+                    try {
+                      localStorage.setItem("telegram_chat_id", val);
+                    } catch {}
+                  }}
+                  placeholder="مثال: 1646239738"
+                  className="w-full bg-[#0F1419] border border-[#1E293B] rounded-lg px-3 py-1.5 text-xs text-[#E2E8F0] font-mono focus:border-[#06B6D4] focus:outline-none"
+                />
+              </div>
+
+              {/* Test Telegram Connection Button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isTestingTelegram}
+                onClick={handleTestTelegram}
+                className="w-full h-9 bg-[#06B6D4]/10 hover:bg-[#06B6D4]/20 border-[#06B6D4]/40 text-[#22D3EE] hover:text-[#67E8F9] font-bold text-xs gap-2 transition-all cursor-pointer shadow-md"
+              >
+                {isTestingTelegram ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#06B6D4]" />
+                ) : (
+                  <Send className="h-4 w-4 text-[#06B6D4]" />
+                )}
+                <span>🧪 اختبار اتصال بوت تليجرام (Test Connection)</span>
+              </Button>
+            </div>
 
             {/* Notification & Audio Pipeline Diagnostic Section */}
             <div className="bg-[#080C14] p-3 rounded-xl border border-[#3B82F6]/30 space-y-2.5 mt-2">

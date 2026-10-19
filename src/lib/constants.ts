@@ -83,4 +83,6 @@ export const DEFAULT_API_KEYS = {
   openRouterKey: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "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",
   goldKey: process.env.NEXT_PUBLIC_GOLD_API_KEY || "91e8dace85b3450ba3ed3257529e155f",
   selectedModel: "gemini-2.0-flash" as AiModelOption,
+  telegramBotToken: process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || "8943955693:AAFXvWhi-MOR_zD3TYV3JjCosl9cpu5BzyU",
+  telegramChatId: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || "1646239738",
 };
