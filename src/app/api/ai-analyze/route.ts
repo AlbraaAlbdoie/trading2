@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // NEXUS ALPHA — Institutional Quantitative Trading & Risk Engine API
 // Math-first deterministic calculations with Senior Hedge Fund Risk Manager AI
+// Phase 1 Remediation: Removed synthetic-data fallback for crypto, hardcoded
+// scores, and hardcoded R:R. Added symbol validation and final trade validator.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
@@ -13,6 +15,15 @@ import {
 import { computeQuantMatrix } from "@/lib/quantEngine";
 import { calculateBulletSignal } from "@/lib/bulletStrategy";
 import { isGoldMarketWeekendClosed } from "@/lib/utils";
+import {
+  RVOL_MIN_THRESHOLD,
+  validateRvol,
+  computeDeterministicScore,
+  calculateRiskReward,
+  validateTradeRecommendation,
+  DATA_SOURCE_REAL,
+  DATA_SOURCE_SYNTHETIC,
+} from "@/lib/tradePolicy";
 import {
   AiAnalysisRequest,
   AiTradeRecommendation,
@@ -30,13 +41,13 @@ STRICT EXECUTION RULES:
 1. Default Decision: In 80% to 90% of market conditions, the market is noisy. Your DEFAULT output MUST BE status: "NO_CLEAR_SETUP".
 2. Rule of Confluence for LONG:
    - Market Trend MUST be "STRONG_BULLISH".
-   - RVOL MUST be >= 1.3 (Confirmed Volume).
+   - RVOL MUST be >= ${RVOL_MIN_THRESHOLD} (Confirmed Volume). This is a hard rule.
    - Price must NOT be directly hitting "highest_high_20" resistance.
    - BTC Health Guard must be STABLE.
    - If ANY condition fails -> Return "NO_CLEAR_SETUP".
 3. Rule of Confluence for SHORT:
    - Market Trend MUST be "STRONG_BEARISH".
-   - RVOL MUST be >= 1.3.
+   - RVOL MUST be >= ${RVOL_MIN_THRESHOLD}. This is a hard rule.
    - Price must NOT be directly hitting "lowest_low_20" support.
    - If ANY condition fails -> Return "NO_CLEAR_SETUP".
 4. Exact Price Compliance (Zero Hallucination):
@@ -57,7 +68,7 @@ JSON OUTPUT FORMAT (Return pure valid JSON only, without markdown wraps or extra
   "stop_loss": number,
   "take_profit_1": number,
   "take_profit_2": number,
-  "risk_reward_ratio": "1:2.0",
+  "risk_reward_ratio": "1:2.33",
   "reasoning_arabic": "شرح خبير التداول المالي باللغة العربية بناءً على الاتجاه والـ ATR والحجم الحقيقي والسيولة",
   "scenario_plan": {
     "market_bias": "صاعد منتظر" | "هابط منتظر" | "تذبذب عرضي حاد",
@@ -202,7 +213,7 @@ function computeConditionalTrigger(quantMatrix: QuantMatrix): ConditionalTrigger
     expected_bias: bias,
     bullish_trigger: {
       price: bullTrigger,
-      condition: `صعود واختراق مستوى القمة $${formatPrice(bullTrigger)} مع إغلاق شمعة 15د وحجم مؤكد (RVOL ≥ 1.3)`,
+      condition: `صعود واختراق مستوى القمة $${formatPrice(bullTrigger)} مع إغلاق شمعة 15د وحجم مؤكد (RVOL ≥ ${RVOL_MIN_THRESHOLD})`,
       target: bullTarget,
       action: "LONG",
     },
@@ -242,7 +253,17 @@ function computeScenarioPlan(matrix: QuantMatrix): ScenarioPlan {
   };
 }
 
-/** Deterministic Quant Fallback Engine */
+/**
+ * Deterministic Quant Fallback Engine
+ *
+ * PHASE 1 FIX:
+ * - Removed hardcoded confidence scores (84 for SHORT, 86 for LONG).
+ *   Scores are now computed via computeDeterministicScore() — a transparent
+ *   rule-based heuristic. The score does NOT represent win probability.
+ * - RVOL threshold is now RVOL_MIN_THRESHOLD (1.3) from tradePolicy.ts,
+ *   consistent with the AI prompt and the final validator.
+ * - R:R is taken from quantMatrix which now uses real calculated ratios.
+ */
 function generateDeterministicQuantRecommendation(
   symbol: string,
   quantMatrix: QuantMatrix,
@@ -259,8 +280,8 @@ function generateDeterministicQuantRecommendation(
   if (btcDumpRisk) {
     return {
       status: "NO_CLEAR_SETUP",
-      confidence_score: 30,
-      confluence_score: 30,
+      confidence_score: 0,
+      confluence_score: 0,
       symbol,
       timeframe_confluence: "تحذير هبوط حاد في البيتكوين (BTC Guard Triggered)",
       entry_price: currentLivePrice,
@@ -282,8 +303,8 @@ function generateDeterministicQuantRecommendation(
   if (trend === "CHOPPY_SIDEWAYS") {
     return {
       status: "NO_CLEAR_SETUP",
-      confidence_score: 35,
-      confluence_score: 35,
+      confidence_score: 0,
+      confluence_score: 0,
       symbol,
       timeframe_confluence: "نطاق عرضي متذبذب (Choppy Sideways - No Trend)",
       entry_price: currentLivePrice,
@@ -301,21 +322,21 @@ function generateDeterministicQuantRecommendation(
     };
   }
 
-  // 3. Guard against Low Liquidity
-  if (rvol < 1.2) {
+  // 3. Guard against Low Liquidity — uses unified RVOL_MIN_THRESHOLD from tradePolicy
+  if (!validateRvol(rvol)) {
     return {
       status: "NO_CLEAR_SETUP",
-      confidence_score: 40,
-      confluence_score: 40,
+      confidence_score: 0,
+      confluence_score: 0,
       symbol,
-      timeframe_confluence: `سيولة ضعيفة (RVOL = ${rvol.toFixed(2)} < 1.2)`,
+      timeframe_confluence: `سيولة ضعيفة (RVOL = ${rvol.toFixed(2)} < ${RVOL_MIN_THRESHOLD})`,
       entry_price: currentLivePrice,
       stop_loss: currentLivePrice,
       take_profit_1: currentLivePrice,
       take_profit_2: currentLivePrice,
       risk_reward_ratio: "0:0",
       reasoning_arabic:
-        `حجم التداول الحالي ضعيف جداً (RVOL = ${rvol.toFixed(2)}). الدخول الآن يعرض الصفقة لكسور وهمية. ${conditionalTrigger.summary_arabic}`,
+        `حجم التداول الحالي ضعيف جداً (RVOL = ${rvol.toFixed(2)}). الحد الأدنى المطلوب هو ${RVOL_MIN_THRESHOLD}x. الدخول الآن يعرض الصفقة لكسور وهمية. ${conditionalTrigger.summary_arabic}`,
       btc_warning: null,
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
@@ -328,11 +349,20 @@ function generateDeterministicQuantRecommendation(
   const distToHighPct =
     highestHigh20 > 0 ? (highestHigh20 - currentLivePrice) / currentLivePrice : 1;
   if (trend === "STRONG_BULLISH" && distToHighPct > 0.004) {
-    const status = tradeMode === "spot" ? "SPOT_BUY" : "LONG";
+    const tradeStatus = tradeMode === "spot" ? "SPOT_BUY" : "LONG";
+    const side = "LONG";
+
+    const deterministicScore = computeDeterministicScore({
+      trend,
+      rvol,
+      priceDistToExtremesPct: distToHighPct,
+      btcDumpRisk,
+    });
+
     return {
-      status,
-      confidence_score: 86,
-      confluence_score: 86,
+      status: tradeStatus,
+      confidence_score: deterministicScore,
+      confluence_score: deterministicScore,
       symbol,
       timeframe_confluence: "الاتجاه صاعد مؤسساتي (EMA 50 > EMA 200) + حجم مؤكد RVOL",
       entry_price: currentLivePrice,
@@ -340,7 +370,7 @@ function generateDeterministicQuantRecommendation(
       take_profit_1: longLevels.mathTp1,
       take_profit_2: longLevels.mathTp2,
       risk_reward_ratio: longLevels.riskRewardRatio,
-      reasoning_arabic: `توافق إحصائي كامل للشراء: السعر فوق EMA 50 و EMA 200 مع تأكيد سيولة بحجم نسبي RVOL = ${rvol.toFixed(2)}. تم حساب وقف الخسارة والأهداف بدقة رياضية باستخدام 1.5 و 2.0 أضعاف مؤشر التقلب الحقيقي (ATR).`,
+      reasoning_arabic: `[نتيجة المحرك الحتمي — ليست احتمالية ربح] توافق إحصائي للشراء: السعر فوق EMA 50 و EMA 200 مع تأكيد سيولة بحجم نسبي RVOL = ${rvol.toFixed(2)}. تم حساب وقف الخسارة والأهداف بدقة رياضية باستخدام 1.5 و 2.0 و 3.5 أضعاف مؤشر التقلب الحقيقي (ATR).`,
       btc_warning: null,
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
@@ -350,10 +380,17 @@ function generateDeterministicQuantRecommendation(
   // 5. Bearish Setup with Support Clearance
   const distToLowPct = lowestLow20 > 0 ? (currentLivePrice - lowestLow20) / currentLivePrice : 1;
   if (trend === "STRONG_BEARISH" && distToLowPct > 0.004 && tradeMode === "futures") {
+    const deterministicScore = computeDeterministicScore({
+      trend,
+      rvol,
+      priceDistToExtremesPct: distToLowPct,
+      btcDumpRisk,
+    });
+
     return {
       status: "SHORT",
-      confidence_score: 84,
-      confluence_score: 84,
+      confidence_score: deterministicScore,
+      confluence_score: deterministicScore,
       symbol,
       timeframe_confluence: "الاتجاه هابط مؤسساتي (EMA 50 < EMA 200) + كسر سيولة",
       entry_price: currentLivePrice,
@@ -361,18 +398,18 @@ function generateDeterministicQuantRecommendation(
       take_profit_1: shortLevels.mathTp1,
       take_profit_2: shortLevels.mathTp2,
       risk_reward_ratio: shortLevels.riskRewardRatio,
-      reasoning_arabic: `توافق إحصائي كامل للبيع: السعر يقع أسفل متوسطات EMA 50 و EMA 200 مع ضغط بيعي بحجم RVOL = ${rvol.toFixed(2)}. تم تثبيت وقف الخسارة والأهداف رياضياً بواسطة تقلبات الـ ATR.`,
+      reasoning_arabic: `[نتيجة المحرك الحتمي — ليست احتمالية ربح] توافق إحصائي للبيع: السعر يقع أسفل متوسطات EMA 50 و EMA 200 مع ضغط بيعي بحجم RVOL = ${rvol.toFixed(2)}. تم تثبيت وقف الخسارة والأهداف رياضياً بواسطة تقلبات الـ ATR.`,
       btc_warning: null,
       timestamp: Date.now(),
       quant_matrix: quantMatrix,
     };
   }
 
-  // Default Fallback
+  // Default Fallback — price too close to swing extreme
   return {
     status: "NO_CLEAR_SETUP",
-    confidence_score: 50,
-    confluence_score: 50,
+    confidence_score: 0,
+    confluence_score: 0,
     symbol,
     timeframe_confluence: "قرب السعر من مستويات مقاومة أو دعم محورية",
     entry_price: currentLivePrice,
@@ -421,30 +458,38 @@ export async function POST(req: Request) {
       });
     }
 
+    // ── Read API keys server-side only (no NEXT_PUBLIC_ in production) ──
     const selectedModel: AiModelOption = apiSettings?.selectedModel || "gemini-2.0-flash";
-    const geminiKey = apiSettings?.geminiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-    const groqKey = apiSettings?.groqKey || process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+    const geminiKey = apiSettings?.geminiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+    const groqKey = apiSettings?.groqKey || process.env.GROQ_API_KEY || process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
     const openRouterKey =
-      apiSettings?.openRouterKey || process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
+      apiSettings?.openRouterKey || process.env.OPENROUTER_API_KEY || process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "";
 
     const rawProvidedPrice =
       typeof body.currentPrice === "number" && body.currentPrice > 0
         ? body.currentPrice
         : null;
 
-    // ── Step 1: Fetch Candles for Deterministic Math (250 1H candles for EMA200) ──
+    // ── Step 1: Fetch Candles for Deterministic Math ──────────────────────────
     let candles1h: CandleData[] = [];
     let candles15m: CandleData[] = [];
     let btcDumpRisk = false;
+    // Track whether candles came from a real exchange feed
+    let dataSource: string = DATA_SOURCE_REAL;
 
     if (isGold) {
+      // Gold: synthetic candles around live spot price are acceptable because
+      // PAXGUSDT / TwelveData is used only for the price anchor, and Gold has
+      // no native kline feed. The synthetic candle generator is intentionally
+      // used ONLY for the Gold analysis path.
       let goldBase = rawProvidedPrice;
       if (!goldBase || goldBase < 1000) {
         try {
           const goldApiKey =
             apiSettings?.goldKey ||
+            process.env.GOLD_API_KEY ||
             process.env.NEXT_PUBLIC_GOLD_API_KEY ||
-            "91e8dace85b3450ba3ed3257529e155f";
+            "";
           const res = await fetch(
             `https://api.twelvedata.com/price?symbol=XAU/USD&apikey=${goldApiKey}`,
             { next: { revalidate: 10 } },
@@ -468,10 +513,15 @@ export async function POST(req: Request) {
         } catch {}
       }
       const finalGoldRate = goldBase && goldBase > 1000 ? goldBase : 4148.50;
+      // Gold synthetic candles are flagged as synthetic but ALLOWED for gold path only.
       candles1h = generateSyntheticGoldKlines(finalGoldRate, 250);
       candles15m = generateSyntheticGoldKlines(finalGoldRate, 50);
+      dataSource = DATA_SOURCE_SYNTHETIC; // Gold always uses synthetic — this is expected and documented.
     } else {
+      // ── CRYPTO PATH: Real candles required. Synthetic fallback is FORBIDDEN. ──
       const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      let fetchError: string | null = null;
+
       try {
         [candles1h, candles15m, btcDumpRisk] = await Promise.all([
           fetchBinanceKlines(cleanSymbol, "1h", 250, tradeMode),
@@ -479,11 +529,61 @@ export async function POST(req: Request) {
           checkBtcDumpGuard(),
         ]);
       } catch (binanceErr) {
-        console.warn("[API] Binance direct fetch fallback:", binanceErr);
-        const fallbackPrice = rawProvidedPrice || 100;
-        candles1h = generateSyntheticGoldKlines(fallbackPrice, 250);
-        candles15m = generateSyntheticGoldKlines(fallbackPrice, 50);
+        // DO NOT fall back to synthetic data for crypto symbols.
+        // Log the error (without secrets) and return a structured NO_CLEAR_SETUP
+        // that cannot be treated as a trade recommendation.
+        const errMsg = binanceErr instanceof Error ? binanceErr.message : String(binanceErr);
+        fetchError = errMsg;
+        console.warn(`[API] Binance kline fetch failed for ${cleanSymbol}: ${errMsg}`);
       }
+
+      // Symbol validation: Check candle list is non-empty and prices are real
+      if (fetchError || candles1h.length === 0 || candles15m.length === 0) {
+        const reason = fetchError
+          ? `رمز "${symbol}" غير معتمد أو غير موجود على ${tradeMode === "futures" ? "Binance Futures" : "Binance Spot"}. تحقق من صحة الرمز.`
+          : `لم يتم استلام بيانات شموع كافية للرمز "${symbol}". يرجى المحاولة مجدداً.`;
+
+        return NextResponse.json({
+          status: "NO_CLEAR_SETUP",
+          confidence_score: 0,
+          confluence_score: 0,
+          symbol,
+          timeframe_confluence: "خطأ في مصدر البيانات — رمز غير مدعوم أو طلب فاشل",
+          entry_price: 0,
+          stop_loss: 0,
+          take_profit_1: 0,
+          take_profit_2: 0,
+          risk_reward_ratio: "0:0",
+          reasoning_arabic: `⚠️ ${reason} لم يتم توليد أي توصية تداول. الأنظمة الصارمة تمنع إصدار إشارات بدون بيانات سوق حقيقية ومعتمدة.`,
+          btc_warning: null,
+          model_used: "Symbol Validation Guard",
+          timestamp: Date.now(),
+          data_source_error: fetchError || "EMPTY_CANDLES",
+        } as AiTradeRecommendation & { data_source_error: string });
+      }
+
+      // Sanity check: at least some candles must have non-zero close prices
+      const hasValidPrices = candles1h.some((c) => isFinite(c.close) && c.close > 0);
+      if (!hasValidPrices) {
+        return NextResponse.json({
+          status: "NO_CLEAR_SETUP",
+          confidence_score: 0,
+          confluence_score: 0,
+          symbol,
+          timeframe_confluence: "بيانات شموع غير صالحة — أسعار الإغلاق صفر أو غير نهائية",
+          entry_price: 0,
+          stop_loss: 0,
+          take_profit_1: 0,
+          take_profit_2: 0,
+          risk_reward_ratio: "0:0",
+          reasoning_arabic: `⚠️ بيانات الشموع المستلمة من المنصة تحتوي على أسعار غير صالحة. لم يتم توليد توصية تداول.`,
+          btc_warning: null,
+          model_used: "Candle Integrity Guard",
+          timestamp: Date.now(),
+        } as AiTradeRecommendation);
+      }
+
+      dataSource = DATA_SOURCE_REAL;
     }
 
     // ── Step 2: Compute Mathematical Quantitative Matrix (100% Deterministic) ──
@@ -497,7 +597,6 @@ export async function POST(req: Request) {
     const bulletSignal = calculateBulletSignal(candles15m);
 
     // ── Step 3: Fast-Path No-Trade Checks & Smart Credit Saver ──
-    // If BTC is dumping, enforce Capital Preservation immediately
     if (btcDumpRisk && !isGold) {
       const btcAlertRec = generateDeterministicQuantRecommendation(
         symbol,
@@ -510,9 +609,8 @@ export async function POST(req: Request) {
       return NextResponse.json(btcAlertRec);
     }
 
-    // Smart Credit Saver: If trend is Choppy or RVOL < 1.2 (low liquidity),
-    // mathematical confluence is < 70%. SKIP CALLING LLM API completely to preserve credits!
-    if (quantMatrix.trend === "CHOPPY_SIDEWAYS" || quantMatrix.rvol < 1.2) {
+    // Smart Credit Saver: Use unified RVOL_MIN_THRESHOLD from tradePolicy
+    if (quantMatrix.trend === "CHOPPY_SIDEWAYS" || !validateRvol(quantMatrix.rvol)) {
       const creditSaverRec = generateDeterministicQuantRecommendation(
         symbol,
         quantMatrix,
@@ -542,15 +640,17 @@ STRICT RULE: "entry_price" MUST strictly equal live_spot_price (${quantMatrix.cu
   * Math_SL (1.5*ATR): ${quantMatrix.longLevels.mathSl}
   * Math_TP1 (2.0*ATR): ${quantMatrix.longLevels.mathTp1}
   * Math_TP2 (3.5*ATR): ${quantMatrix.longLevels.mathTp2}
+  * Calculated R:R (TP2 as reward): ${quantMatrix.longLevels.riskRewardRatio}
 - Pre-calculated Mathematical SHORT Levels (Use strictly if taking SHORT):
   * Entry: ${quantMatrix.currentLivePrice}
   * Math_SL (1.5*ATR): ${quantMatrix.shortLevels.mathSl}
   * Math_TP1 (2.0*ATR): ${quantMatrix.shortLevels.mathTp1}
   * Math_TP2 (3.5*ATR): ${quantMatrix.shortLevels.mathTp2}
+  * Calculated R:R (TP2 as reward): ${quantMatrix.shortLevels.riskRewardRatio}
 
 3. Volume & Liquidity Spike (RVOL):
 - Current RVOL: ${quantMatrix.rvol} vs 20-candle average
-- Volume Status: ${quantMatrix.volumeStatus} (Must be >= 1.3 for institutional trade execution)
+- Volume Status: ${quantMatrix.volumeStatus} (Must be >= ${RVOL_MIN_THRESHOLD} for institutional trade execution)
 
 4. Key Swing Levels (Last 20 candles):
 - Highest High 20: ${quantMatrix.highestHigh20}
@@ -560,7 +660,7 @@ STRICT RULE: "entry_price" MUST strictly equal live_spot_price (${quantMatrix.cu
 - BTC Health Guard: ${btcDumpRisk ? "DUMP_RISK_HIGH" : "STABLE"}
 - Bullet Strategy Signal: ${bulletSignal.direction} (${bulletSignal.status})
 
-Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3, or price is too close to swing extremes, enforce capital preservation by returning "NO_CLEAR_SETUP". Output pure valid JSON.
+Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RVOL_MIN_THRESHOLD}, or price is too close to swing extremes, enforce capital preservation by returning "NO_CLEAR_SETUP". Output pure valid JSON.
 `;
 
     // ── Step 5: Multi-Provider AI Inference with Resilient Fallback ──
@@ -636,6 +736,27 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3,
         }
       }
 
+      // ── Step 7: Final Deterministic Validator ──────────────────────────────
+      // A recommendation that is a trade status (LONG/SHORT/SPOT_BUY) must pass
+      // the final validator before being returned. Failed validation demotes it
+      // to NO_CLEAR_SETUP to prevent the dashboard and Telegram from treating
+      // it as a valid tradeable signal.
+      if (parsed.status === "LONG" || parsed.status === "SHORT" || parsed.status === "SPOT_BUY") {
+        const validation = validateTradeRecommendation(parsed, dataSource);
+        if (!validation.valid) {
+          console.warn(`[API] Final validator rejected ${parsed.symbol} ${parsed.status}: ${validation.reason}`);
+          return NextResponse.json({
+            ...parsed,
+            status: "NO_CLEAR_SETUP" as const,
+            confidence_score: 0,
+            confluence_score: 0,
+            risk_reward_ratio: "0:0",
+            timeframe_confluence: `رُفضت الصفقة بواسطة المحقق النهائي (${validation.code})`,
+            reasoning_arabic: `⚠️ تم رفض هذه الإشارة بواسطة محقق التداول النهائي: ${validation.reason} — لم يتم إصدار أي توصية تداول.`,
+          });
+        }
+      }
+
       return NextResponse.json(parsed);
     } catch (aiCallErr) {
       console.warn("[API] AI provider call fallback to Deterministic Quant Engine:", aiCallErr);
@@ -647,6 +768,20 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3,
       );
       fallbackRec.model_used = `Deterministic Quant Engine (${modelName || "محرك الرياضيات الصارم"})`;
       fallbackRec.bullet_signal = bulletSignal;
+
+      // Run final validator on fallback too
+      if (fallbackRec.status === "LONG" || fallbackRec.status === "SHORT" || fallbackRec.status === "SPOT_BUY") {
+        const validation = validateTradeRecommendation(fallbackRec, dataSource);
+        if (!validation.valid) {
+          console.warn(`[API] Final validator rejected fallback ${symbol} ${fallbackRec.status}: ${validation.reason}`);
+          fallbackRec.status = "NO_CLEAR_SETUP";
+          fallbackRec.confidence_score = 0;
+          fallbackRec.confluence_score = 0;
+          fallbackRec.risk_reward_ratio = "0:0";
+          fallbackRec.reasoning_arabic = `⚠️ تم رفض الإشارة الاحتياطية بواسطة محقق التداول النهائي: ${validation.reason}`;
+        }
+      }
+
       return NextResponse.json(fallbackRec);
     }
   } catch (error) {
@@ -654,8 +789,8 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < 1.3,
     return NextResponse.json(
       {
         status: "NO_CLEAR_SETUP",
-        confidence_score: 50,
-        confluence_score: 50,
+        confidence_score: 0,
+        confluence_score: 0,
         symbol: "UNKNOWN",
         timeframe_confluence: "حدث خطأ أثناء معالجة البيانات الرياضية",
         entry_price: 0,

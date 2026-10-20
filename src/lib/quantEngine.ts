@@ -4,6 +4,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { CandleData, QuantMatrix } from "./types";
+import { calculateRiskReward } from "./tradePolicy";
+
 
 /**
  * Calculate Exponential Moving Average (EMA) with adaptive backfill
@@ -196,6 +198,13 @@ export function computeQuantMatrix(
   const shortTp1 = roundPrice(currentLivePrice - 2.0 * atr14);
   const shortTp2 = roundPrice(currentLivePrice - 3.5 * atr14);
 
+  // R:R is calculated from actual prices, not from ATR multipliers.
+  // TP2 is the primary reward reference (final target).
+  // Formula: SHORT risk = SL - entry; reward = entry - target.
+  //          LONG  risk = entry - SL; reward = target - entry.
+  const longRrTp2  = calculateRiskReward("LONG",  currentLivePrice, longSl,  longTp2)  ?? "N/A";
+  const shortRrTp2 = calculateRiskReward("SHORT", currentLivePrice, shortSl, shortTp2) ?? "N/A";
+
   return {
     currentLivePrice: roundPrice(currentLivePrice),
     trend,
@@ -210,13 +219,14 @@ export function computeQuantMatrix(
       mathSl: longSl,
       mathTp1: longTp1,
       mathTp2: longTp2,
-      riskRewardRatio: "1:2.0",
+      riskRewardRatio: longRrTp2,
     },
     shortLevels: {
       mathSl: shortSl,
       mathTp1: shortTp1,
       mathTp2: shortTp2,
-      riskRewardRatio: "1:2.0",
+      riskRewardRatio: shortRrTp2,
     },
   };
 }
+

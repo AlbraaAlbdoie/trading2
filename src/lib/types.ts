@@ -291,3 +291,69 @@ export interface ScreenerColumn {
   sortable: boolean;
   width?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 2 — Opportunity Lifecycle & Background Monitoring Types
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** FSM Opportunity Lifecycle States */
+export type OpportunityState =
+  | "SCANNED"
+  | "CANDIDATE"
+  | "WATCHING"
+  | "TRIGGERED"
+  | "ALERTED"
+  | "INVALIDATED"
+  | "EXPIRED"
+  | "DATA_UNAVAILABLE";
+
+/** Active Market Opportunity record in Supabase (market_opportunities table) */
+export interface MarketOpportunity {
+  id?: string;
+  symbol: string;
+  market: MarketTab;
+  trade_mode: TradeMode;
+  direction: "LONG" | "SHORT" | "SPOT_BUY";
+  state: OpportunityState;
+  current_price: number;
+  trigger_price: number | null;
+  target_sl: number | null;
+  target_tp1: number | null;
+  target_tp2: number | null;
+  calculated_rr: string | null;
+  rvol: number | null;
+  confluence_score: number | null;
+  trend_bias: string | null;
+  detected_at?: string;
+  expires_at: string;
+  last_checked_at?: string;
+  invalidated_reason?: string | null;
+}
+
+/** Alert Dispatch Log record in Supabase (alert_dispatch_logs table) */
+export interface AlertDispatchLog {
+  id?: string;
+  opportunity_id?: string | null;
+  symbol: string;
+  direction: string;
+  channel: "telegram" | "web_push" | "browser_toast";
+  recipient_chat_id?: string | null;
+  idempotency_key: string;
+  delivered_at?: string;
+  payload_snapshot: Record<string, unknown>;
+  delivery_status: "PENDING" | "SUCCESS" | "FAILED" | "RATE_LIMITED";
+}
+
+/** Monitor Execution Run record in Supabase (monitor_execution_runs table) */
+export interface MonitorExecutionRun {
+  id?: string;
+  triggered_by: "cron_scheduler" | "manual_ui" | "webhook";
+  symbols_scanned: number;
+  opportunities_found: number;
+  alerts_dispatched: number;
+  duration_ms: number;
+  status: "SUCCESS" | "PARTIAL_FAIL" | "FAILED";
+  error_summary?: string | null;
+  created_at?: string;
+}
+

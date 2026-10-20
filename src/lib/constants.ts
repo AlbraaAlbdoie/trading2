@@ -77,12 +77,17 @@ export const AI_MODELS: { id: AiModelOption; name: string; provider: string; tag
 ];
 
 // ── Default API Keys ──────────────────────────────────────────────────
+// SECURITY: Keys are read from user-provided apiSettings (stored in localStorage)
+// or from NEXT_PUBLIC_ vars which users can override.
+// Telegram credentials must be supplied by the user via the Settings UI.
+// Never hardcode real secret values here — rotate any exposed keys immediately.
 export const DEFAULT_API_KEYS = {
-  geminiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AQ.Ab8RN6KULQtXWED1b4WSAaZ0Sby9p1DsuhtZvILmctxtqxGdjQ",
-  groqKey: process.env.NEXT_PUBLIC_GROQ_API_KEY || "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",
-  openRouterKey: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "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",
-  goldKey: process.env.NEXT_PUBLIC_GOLD_API_KEY || "91e8dace85b3450ba3ed3257529e155f",
+  geminiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "",
+  groqKey: process.env.NEXT_PUBLIC_GROQ_API_KEY || "",
+  openRouterKey: process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || "",
+  goldKey: process.env.NEXT_PUBLIC_GOLD_API_KEY || "",
   selectedModel: "gemini-2.0-flash" as AiModelOption,
-  telegramBotToken: process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || "8943955693:AAFXvWhi-MOR_zD3TYV3JjCosl9cpu5BzyU",
-  telegramChatId: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID || "1646239738",
+  // Telegram credentials: supplied by the user through Settings only.
+  telegramBotToken: "",
+  telegramChatId: "",
 };

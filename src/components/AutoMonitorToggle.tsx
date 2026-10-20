@@ -1,23 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Auto-Monitor Header Toggle (وضع المراقبة التلقائية)
-// Robust Countdown Timer (useRef + timestamp), Dropdown Layering & Persistent State
+// NEXUS ALPHA — Auto-Monitor Header Toggle (وضع المراقبة الخادمي والآلي)
+// Phase 2: Triggers server-side market scans, monitors scheduled runs,
+// displays server execution state, and eliminates heavy client-side loops.
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Radio, Loader2, ChevronDown, Check } from "lucide-react";
+import { Radio, Loader2, ChevronDown, Check, Zap, Server, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDashboardStore } from "@/store/useDashboardStore";
 import { playTradeChime } from "@/hooks/useAudioAlert";
-import {
-  requestNotificationPermission,
-  sendTradeSignalNotification,
-  getNotificationPermission,
-} from "@/lib/webNotifications";
-import { sendTelegramTradeAlert } from "@/lib/telegram";
-import { DEFAULT_API_KEYS } from "@/lib/constants";
-import { supabase } from "@/lib/supabase";
-import { AiTradeRecommendation } from "@/lib/types";
+import { requestNotificationPermission } from "@/lib/webNotifications";
 import { cn } from "@/lib/utils";
 
 const INTERVAL_OPTIONS = [
@@ -26,9 +19,17 @@ const INTERVAL_OPTIONS = [
   { value: 30, label: "30 دقيقة" },
 ] as const;
 
+interface LastRunInfo {
+  symbols_scanned: number;
+  opportunities_found: number;
+  alerts_dispatched: number;
+  duration_ms: number;
+  status: string;
+  created_at: string;
+}
+
 export function AutoMonitorToggle() {
-  const { state, addToast } = useDashboardStore();
-  const { tickers, goldTicker, tradeMode, apiSettings, authUser } = state;
+  const { addToast } = useDashboardStore();
 
   // 1. Persistent State Initialization from localStorage
   const [isEnabled, setIsEnabled] = useState<boolean>(() => {
@@ -49,11 +50,34 @@ export function AutoMonitorToggle() {
   const [isScanning, setIsScanning] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(intervalMinutes * 60);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [lastRun, setLastRun] = useState<LastRunInfo | null>(null);
 
-  // Persistent Refs for Target Timestamp & Timer (Prevents reset on state/ticker ticks)
+  // Persistent Refs for Target Timestamp & Timer
   const targetTimeRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Fetch latest server monitor run status
+  const fetchMonitorStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cron/market-scan?status=1");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.lastRun) {
+          setLastRun(data.lastRun);
+        }
+      }
+    } catch {
+      // Quiet fail if offline
+    }
+  }, []);
+
+  // Poll status on mount and every 30 seconds
+  useEffect(() => {
+    fetchMonitorStatus();
+    const statusInterval = setInterval(fetchMonitorStatus, 30000);
+    return () => clearInterval(statusInterval);
+  }, [fetchMonitorStatus]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -78,128 +102,49 @@ export function AutoMonitorToggle() {
     } catch {}
   }, [isEnabled, intervalMinutes]);
 
-  // Scan cycle executor
-  const executeScanCycle = useCallback(async () => {
+  // Phase 2: Execute Scan via the Server-Side Scheduled Route
+  const executeServerScan = useCallback(async () => {
     if (isScanning) return;
     setIsScanning(true);
 
     try {
-      // Gather scan candidates: Top 3 cryptos by RVOL + Gold
-      const candidates: Array<{
-        symbol: string;
-        market: "crypto" | "gold";
-        price: number;
-      }> = [...tickers]
-        .sort((a, b) => b.volume24h * b.rvol - a.volume24h * a.rvol)
-        .slice(0, 3)
-        .map((c) => ({
-          symbol: c.symbol,
-          market: "crypto",
-          price: c.markPrice,
-        }));
+      const res = await fetch("/api/cron/market-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
 
-      if (goldTicker && goldTicker.price > 0) {
-        candidates.push({
-          symbol: "XAUUSD",
-          market: "gold",
-          price: goldTicker.price,
-        });
-      }
-
-      let detectedHighConfluence = 0;
-
-      for (const asset of candidates) {
-        try {
-          const res = await fetch("/api/ai-analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              symbol: asset.symbol,
-              market: asset.market,
-              tradeMode,
-              currentPrice: asset.price,
-              apiSettings,
-            }),
-          });
-
-          if (res.ok) {
-            const rec: AiTradeRecommendation = await res.json();
-            const score = rec.confluence_score || rec.confidence_score || 0;
-            const isTrade =
-              rec.status === "LONG" || rec.status === "SHORT" || rec.status === "SPOT_BUY";
-
-            if (isTrade && score >= 80) {
-              detectedHighConfluence++;
-              // Play chime
-              playTradeChime("high");
-
-              // Send native web push notification
-              sendTradeSignalNotification(rec);
-
-              // Send Telegram trade alert
-              const botToken = apiSettings.telegramBotToken || DEFAULT_API_KEYS.telegramBotToken;
-              const chatId = apiSettings.telegramChatId || DEFAULT_API_KEYS.telegramChatId;
-              if (botToken && chatId) {
-                sendTelegramTradeAlert(botToken, chatId, rec).catch((tgErr) => {
-                  console.warn("[AutoMonitor] Telegram alert dispatch notice:", tgErr);
-                });
-              }
-
-              // Auto save to Supabase if user is logged in
-              if (authUser) {
-                try {
-                  await supabase.from("saved_signals").insert([
-                    {
-                      user_id: authUser.id,
-                      symbol: rec.symbol,
-                      status: rec.status,
-                      entry_price: rec.entry_price,
-                      stop_loss: rec.stop_loss,
-                      take_profit_1: rec.take_profit_1,
-                      take_profit_2: rec.take_profit_2,
-                      confidence_score: score,
-                      reasoning_arabic: rec.reasoning_arabic,
-                    },
-                  ]);
-                } catch (dbErr) {
-                  console.warn("[AutoMonitor] DB auto-save failed:", dbErr);
-                }
-              }
-
-              addToast(
-                `🚨 رصدت المراقبة التلقائية فرصة مؤكدة: ${rec.symbol} (${score}%)`,
-                "success",
-              );
-            }
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.alerts_dispatched > 0) {
+            playTradeChime("high");
+            addToast(
+              `🚨 تم رصد وإرسال ${data.alerts_dispatched} تنبيه تداول جديد إلى تليجرام!`,
+              "success",
+            );
+          } else if (data.opportunities_found > 0) {
+            addToast(
+              `📡 اكتمل الفحص: رُصدت ${data.opportunities_found} فرصة قيد المراقبة (تنتظر الزناد).`,
+              "info",
+            );
           }
-        } catch (fetchErr) {
-          console.warn("[AutoMonitor] Asset check error:", fetchErr);
         }
       }
-
-      if (detectedHighConfluence === 0) {
-        console.log("[AutoMonitor] Scan completed: No high-confluence setups (stay in cash)");
-      }
+      // Refresh status after scan
+      await fetchMonitorStatus();
+    } catch (err) {
+      console.warn("[AutoMonitor] Server scan trigger error:", err);
     } finally {
       setIsScanning(false);
     }
-  }, [
-    isScanning,
-    tickers,
-    goldTicker,
-    tradeMode,
-    apiSettings,
-    authUser,
-    addToast,
-  ]);
+  }, [isScanning, addToast, fetchMonitorStatus]);
 
-  // Keep latest executeScanCycle in a stable ref to avoid restarting the timer when tickers change
-  const executeScanCycleRef = useRef(executeScanCycle);
+  const executeServerScanRef = useRef(executeServerScan);
   useEffect(() => {
-    executeScanCycleRef.current = executeScanCycle;
-  }, [executeScanCycle]);
+    executeServerScanRef.current = executeServerScan;
+  }, [executeServerScan]);
 
-  // ── Bulletproof Countdown Controller (Issue 1 Fix) ──
+  // Bulletproof Countdown Controller
   useEffect(() => {
     if (!isEnabled) {
       if (countdownIntervalRef.current) {
@@ -211,12 +156,11 @@ export function AutoMonitorToggle() {
       return;
     }
 
-    // Initialize or recalculate target timestamp if not set
     if (!targetTimeRef.current || targetTimeRef.current <= Date.now()) {
       targetTimeRef.current = Date.now() + intervalMinutes * 60 * 1000;
       setSecondsRemaining(intervalMinutes * 60);
       // Run initial check on start
-      executeScanCycleRef.current();
+      executeServerScanRef.current();
     }
 
     if (countdownIntervalRef.current) {
@@ -230,10 +174,9 @@ export function AutoMonitorToggle() {
       setSecondsRemaining(remaining);
 
       if (remaining <= 0) {
-        // Schedule next cycle timestamp
         targetTimeRef.current = Date.now() + intervalMinutes * 60 * 1000;
         setSecondsRemaining(intervalMinutes * 60);
-        executeScanCycleRef.current();
+        executeServerScanRef.current();
       }
     }, 1000);
 
@@ -247,7 +190,6 @@ export function AutoMonitorToggle() {
 
   const handleToggle = async () => {
     if (!isEnabled) {
-      // Request notifications permission if not granted
       const perm = await requestNotificationPermission();
       if (perm === "granted") {
         addToast("تم تفعيل إشعارات الويب وسطح المكتب بنجاح! 🔔", "success");
@@ -256,7 +198,7 @@ export function AutoMonitorToggle() {
       setSecondsRemaining(intervalMinutes * 60);
       setIsEnabled(true);
       addToast(
-        `🟢 المراقبة تعمل الآن (فحص تلقائي كل ${intervalMinutes} دقائق)`,
+        `🟢 تم تفعيل المراقبة الآلية (فحص كل ${intervalMinutes} دقيقة)`,
         "info",
       );
     } else {
@@ -272,13 +214,29 @@ export function AutoMonitorToggle() {
     targetTimeRef.current = Date.now() + val * 60 * 1000;
     setSecondsRemaining(val * 60);
     setShowDropdown(false);
-    addToast(`تم ضبط فترة المراقبة التلقائية إلى ${val} دقائق`, "info");
+    addToast(`تم ضبط فترة المراقبة إلى ${val} دقائق`, "info");
+  };
+
+  const handleManualScanNow = async () => {
+    setShowDropdown(false);
+    addToast("جاري تنفيذ فحص فوري خادمي للسوق... ⏳", "info");
+    await executeServerScan();
   };
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  const formatLastRunTime = (isoString?: string) => {
+    if (!isoString) return "لا توجد بيانات سابقة";
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return isoString;
+    }
   };
 
   return (
@@ -296,8 +254,8 @@ export function AutoMonitorToggle() {
         )}
         title={
           isEnabled
-            ? `🟢 المراقبة تعمل الآن (فحص تلقائي كل ${intervalMinutes} دقائق) - باقي: ${formatCountdown(secondsRemaining)}`
-            : `وضع المراقبة التلقائية المستمرة (فحص كل ${intervalMinutes} دقائق)`
+            ? `🟢 المراقبة تعمل (فحص خادمي كل ${intervalMinutes} دقائق) - الفحص القادم بعد: ${formatCountdown(secondsRemaining)}`
+            : `تفعيل وضع المراقبة الخادمي (فحص كل ${intervalMinutes} دقائق)`
         }
       >
         {isScanning ? (
@@ -323,23 +281,47 @@ export function AutoMonitorToggle() {
         )}
       </Button>
 
-      {/* Interval Selector Dropdown with high z-index and click-outside (Issue 2 Fix) */}
+      {/* Interval Selector & Status Dropdown */}
       <div className="relative z-50" ref={dropdownRef}>
         <Button
           variant="outline"
           size="sm"
           onClick={() => setShowDropdown((v) => !v)}
           className="h-8 px-1.5 text-[11px] font-mono text-[#94A3B8] border-[#1E293B] bg-[#0A0D14] hover:text-[#E2E8F0] cursor-pointer"
-          title="تغيير فترة الفحص الدوري"
+          title="خيارات الفحص وحالة المراقبة الخادمية"
         >
           <span>{intervalMinutes}د</span>
           <ChevronDown className="h-3 w-3 ml-0.5 text-[#64748B]" />
         </Button>
 
         {showDropdown && (
-          <div className="absolute left-0 mt-1.5 w-36 bg-[#0F141C] border border-[#1E293B] rounded-xl shadow-2xl py-1 z-50 backdrop-blur-xl animate-fade-in">
-            <div className="px-2.5 py-1 text-[10px] text-[#64748B] font-bold border-b border-[#1E293B]">
-              فترة الفحص الدوري:
+          <div className="absolute left-0 mt-1.5 w-56 bg-[#0F141C] border border-[#1E293B] rounded-xl shadow-2xl py-1.5 z-50 backdrop-blur-xl animate-fade-in text-xs">
+            {/* Header */}
+            <div className="px-3 py-1 text-[10px] text-[#64748B] font-bold border-b border-[#1E293B] flex items-center justify-between">
+              <span>خيارات المراقبة الخادمية:</span>
+              <Server className="h-3 w-3 text-[#10B981]" />
+            </div>
+
+            {/* Quick Trigger Button */}
+            <div className="p-1.5 border-b border-[#1E293B]">
+              <button
+                type="button"
+                onClick={handleManualScanNow}
+                disabled={isScanning}
+                className="w-full py-1.5 px-2 bg-[#10B981]/15 hover:bg-[#10B981]/25 text-[#10B981] border border-[#10B981]/30 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isScanning ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Zap className="h-3.5 w-3.5" />
+                )}
+                <span>فحص خادمي فوري الآن</span>
+              </button>
+            </div>
+
+            {/* Interval Options */}
+            <div className="px-2.5 py-1 text-[10px] text-[#64748B] font-bold">
+              فترة التكرار التلقائي:
             </div>
             {INTERVAL_OPTIONS.map((opt) => (
               <button
@@ -347,7 +329,7 @@ export function AutoMonitorToggle() {
                 type="button"
                 onClick={() => handleSelectInterval(opt.value)}
                 className={cn(
-                  "w-full text-right px-2.5 py-1.5 text-xs flex items-center justify-between hover:bg-[#1E293B]/70 transition-colors cursor-pointer",
+                  "w-full text-right px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#1E293B]/70 transition-colors cursor-pointer",
                   intervalMinutes === opt.value
                     ? "text-[#10B981] font-bold bg-[#10B981]/10"
                     : "text-[#E2E8F0]",
@@ -355,10 +337,36 @@ export function AutoMonitorToggle() {
               >
                 <span>{opt.label}</span>
                 {intervalMinutes === opt.value && (
-                  <Check className="h-3 w-3 text-[#10B981]" />
+                  <Check className="h-3.5 w-3.5 text-[#10B981]" />
                 )}
               </button>
             ))}
+
+            {/* Last Execution Run Info */}
+            {lastRun && (
+              <div className="mt-1 pt-1.5 px-3 py-1.5 bg-[#090C11] border-t border-[#1E293B] text-[10px] text-[#94A3B8] space-y-0.5">
+                <div className="flex items-center justify-between text-[#64748B]">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-2.5 w-2.5" /> آخر فحص:
+                  </span>
+                  <span className="font-mono text-[#E2E8F0]">
+                    {formatLastRunTime(lastRun.created_at)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>العملات المفحوصة:</span>
+                  <span className="font-mono font-bold text-[#E2E8F0]">
+                    {lastRun.symbols_scanned}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>الفرص المكتشفة:</span>
+                  <span className="font-mono font-bold text-[#10B981]">
+                    {lastRun.opportunities_found}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
