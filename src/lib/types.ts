@@ -123,6 +123,23 @@ export interface QuantMatrix {
     mathTp2: number;
     riskRewardRatio: string;
   };
+  setupType?: "BREAKOUT" | "PULLBACK" | "NONE";
+  formingRvol?: number;
+  closedRvol?: number;
+  breakoutLevels?: {
+    entry: number;
+    mathSl: number;
+    mathTp1: number;
+    mathTp2: number;
+    riskRewardRatio: string;
+  };
+  pullbackLevels?: {
+    entry: number;
+    mathSl: number;
+    mathTp1: number;
+    mathTp2: number;
+    riskRewardRatio: string;
+  };
 }
 
 /** Actionable Conditional Trigger Plan for Waiting/No-Setup States (خطة الدخول المشروطة) */

@@ -14,6 +14,7 @@ import {
 } from "@/lib/smc";
 import { computeQuantMatrix } from "@/lib/quantEngine";
 import { calculateBulletSignal } from "@/lib/bulletStrategy";
+import { evaluateOpportunity } from "@/lib/opportunityRanker";
 import { isGoldMarketWeekendClosed } from "@/lib/utils";
 import {
   RVOL_MIN_THRESHOLD,
@@ -269,25 +270,23 @@ function generateDeterministicQuantRecommendation(
   quantMatrix: QuantMatrix,
   btcDumpRisk: boolean,
   tradeMode: "futures" | "spot",
+  market: "crypto" | "gold" = "crypto",
 ): AiTradeRecommendation {
-  const { currentLivePrice, trend, rvol, highestHigh20, lowestLow20, longLevels, shortLevels } =
-    quantMatrix;
-
   const conditionalTrigger = computeConditionalTrigger(quantMatrix);
   const scenarioPlan = computeScenarioPlan(quantMatrix);
 
   // 1. Guard against BTC dump
-  if (btcDumpRisk) {
+  if (btcDumpRisk && market !== "gold") {
     return {
       status: "NO_CLEAR_SETUP",
       confidence_score: 0,
       confluence_score: 0,
       symbol,
       timeframe_confluence: "تحذير هبوط حاد في البيتكوين (BTC Guard Triggered)",
-      entry_price: currentLivePrice,
-      stop_loss: currentLivePrice,
-      take_profit_1: currentLivePrice,
-      take_profit_2: currentLivePrice,
+      entry_price: quantMatrix.currentLivePrice,
+      stop_loss: quantMatrix.currentLivePrice,
+      take_profit_1: quantMatrix.currentLivePrice,
+      take_profit_2: quantMatrix.currentLivePrice,
       risk_reward_ratio: "0:0",
       reasoning_arabic:
         `حارس البيتكوين رصد هبوطاً حاداً وغير مستقر في حركة السوق. وفقاً لقواعد إدارة المخاطر، البقاء كاش خارج السوق هو الخيار السليم. ${conditionalTrigger.summary_arabic}`,
@@ -299,130 +298,60 @@ function generateDeterministicQuantRecommendation(
     };
   }
 
-  // 2. Guard against Choppy Sideways
-  if (trend === "CHOPPY_SIDEWAYS") {
-    return {
-      status: "NO_CLEAR_SETUP",
-      confidence_score: 0,
-      confluence_score: 0,
-      symbol,
-      timeframe_confluence: "نطاق عرضي متذبذب (Choppy Sideways - No Trend)",
-      entry_price: currentLivePrice,
-      stop_loss: currentLivePrice,
-      take_profit_1: currentLivePrice,
-      take_profit_2: currentLivePrice,
-      risk_reward_ratio: "0:0",
-      reasoning_arabic:
-        `السوق يتحرك في نطاق عرضي متذبذب بتداخل المتوسطات (EMA 50 / EMA 200). غياب الاتجاه المؤسساتي يفرض البقاء كاش. ${conditionalTrigger.summary_arabic}`,
-      btc_warning: null,
-      timestamp: Date.now(),
-      quant_matrix: quantMatrix,
-      conditional_trigger: conditionalTrigger,
-      scenario_plan: scenarioPlan,
-    };
-  }
-
-  // 3. Guard against Low Liquidity — uses unified RVOL_MIN_THRESHOLD from tradePolicy
-  if (!validateRvol(rvol)) {
-    return {
-      status: "NO_CLEAR_SETUP",
-      confidence_score: 0,
-      confluence_score: 0,
-      symbol,
-      timeframe_confluence: `سيولة ضعيفة (RVOL = ${rvol.toFixed(2)} < ${RVOL_MIN_THRESHOLD})`,
-      entry_price: currentLivePrice,
-      stop_loss: currentLivePrice,
-      take_profit_1: currentLivePrice,
-      take_profit_2: currentLivePrice,
-      risk_reward_ratio: "0:0",
-      reasoning_arabic:
-        `حجم التداول الحالي ضعيف جداً (RVOL = ${rvol.toFixed(2)}). الحد الأدنى المطلوب هو ${RVOL_MIN_THRESHOLD}x. الدخول الآن يعرض الصفقة لكسور وهمية. ${conditionalTrigger.summary_arabic}`,
-      btc_warning: null,
-      timestamp: Date.now(),
-      quant_matrix: quantMatrix,
-      conditional_trigger: conditionalTrigger,
-      scenario_plan: scenarioPlan,
-    };
-  }
-
-  // 4. Bullish Setup with Resistance Clearance
-  const distToHighPct =
-    highestHigh20 > 0 ? (highestHigh20 - currentLivePrice) / currentLivePrice : 1;
-  if (trend === "STRONG_BULLISH" && distToHighPct > 0.004) {
-    const tradeStatus = tradeMode === "spot" ? "SPOT_BUY" : "LONG";
-    const side = "LONG";
-
-    const deterministicScore = computeDeterministicScore({
-      trend,
-      rvol,
-      priceDistToExtremesPct: distToHighPct,
-      btcDumpRisk,
-    });
-
-    return {
-      status: tradeStatus,
-      confidence_score: deterministicScore,
-      confluence_score: deterministicScore,
-      symbol,
-      timeframe_confluence: "الاتجاه صاعد مؤسساتي (EMA 50 > EMA 200) + حجم مؤكد RVOL",
-      entry_price: currentLivePrice,
-      stop_loss: longLevels.mathSl,
-      take_profit_1: longLevels.mathTp1,
-      take_profit_2: longLevels.mathTp2,
-      risk_reward_ratio: longLevels.riskRewardRatio,
-      reasoning_arabic: `[نتيجة المحرك الحتمي — ليست احتمالية ربح] توافق إحصائي للشراء: السعر فوق EMA 50 و EMA 200 مع تأكيد سيولة بحجم نسبي RVOL = ${rvol.toFixed(2)}. تم حساب وقف الخسارة والأهداف بدقة رياضية باستخدام 1.5 و 2.0 و 3.5 أضعاف مؤشر التقلب الحقيقي (ATR).`,
-      btc_warning: null,
-      timestamp: Date.now(),
-      quant_matrix: quantMatrix,
-    };
-  }
-
-  // 5. Bearish Setup with Support Clearance
-  const distToLowPct = lowestLow20 > 0 ? (currentLivePrice - lowestLow20) / currentLivePrice : 1;
-  if (trend === "STRONG_BEARISH" && distToLowPct > 0.004 && tradeMode === "futures") {
-    const deterministicScore = computeDeterministicScore({
-      trend,
-      rvol,
-      priceDistToExtremesPct: distToLowPct,
-      btcDumpRisk,
-    });
-
-    return {
-      status: "SHORT",
-      confidence_score: deterministicScore,
-      confluence_score: deterministicScore,
-      symbol,
-      timeframe_confluence: "الاتجاه هابط مؤسساتي (EMA 50 < EMA 200) + كسر سيولة",
-      entry_price: currentLivePrice,
-      stop_loss: shortLevels.mathSl,
-      take_profit_1: shortLevels.mathTp1,
-      take_profit_2: shortLevels.mathTp2,
-      risk_reward_ratio: shortLevels.riskRewardRatio,
-      reasoning_arabic: `[نتيجة المحرك الحتمي — ليست احتمالية ربح] توافق إحصائي للبيع: السعر يقع أسفل متوسطات EMA 50 و EMA 200 مع ضغط بيعي بحجم RVOL = ${rvol.toFixed(2)}. تم تثبيت وقف الخسارة والأهداف رياضياً بواسطة تقلبات الـ ATR.`,
-      btc_warning: null,
-      timestamp: Date.now(),
-      quant_matrix: quantMatrix,
-    };
-  }
-
-  // Default Fallback — price too close to swing extreme
-  return {
-    status: "NO_CLEAR_SETUP",
-    confidence_score: 0,
-    confluence_score: 0,
+  // 2. Evaluate with OpportunityRanker (Multi-Factor Quantitative Model)
+  const evalResult = evaluateOpportunity({
     symbol,
-    timeframe_confluence: "قرب السعر من مستويات مقاومة أو دعم محورية",
-    entry_price: currentLivePrice,
-    stop_loss: currentLivePrice,
-    take_profit_1: currentLivePrice,
-    take_profit_2: currentLivePrice,
-    risk_reward_ratio: "0:0",
-    reasoning_arabic:
-      `السعر يقترب بشكل حرج من قمة أو قاع النطاق (Swing Levels) بدون مساحة كافية للعائد مقابل المخاطرة. يُفضل انتظار كسر صريح أو ارتداد مؤكد. ${conditionalTrigger.summary_arabic}`,
+    market,
+    tradeMode,
+    quantMatrix,
+    btcDumpRisk,
+  });
+
+  if (!evalResult.isActionable || !evalResult.direction) {
+    return {
+      status: "NO_CLEAR_SETUP",
+      confidence_score: evalResult.score.totalScore,
+      confluence_score: evalResult.score.totalScore,
+      symbol,
+      timeframe_confluence:
+        quantMatrix.trend === "CHOPPY_SIDEWAYS"
+          ? "نطاق عرضي متذبذب (Choppy Sideways - No Trend)"
+          : `توافق إحصائي غير مكتمل (${evalResult.score.totalScore}/100)`,
+      entry_price: quantMatrix.currentLivePrice,
+      stop_loss: quantMatrix.currentLivePrice,
+      take_profit_1: quantMatrix.currentLivePrice,
+      take_profit_2: quantMatrix.currentLivePrice,
+      risk_reward_ratio: "0:0",
+      reasoning_arabic: `${evalResult.reasoningArabic} ${conditionalTrigger.summary_arabic}`,
+      btc_warning: null,
+      timestamp: Date.now(),
+      quant_matrix: quantMatrix,
+      conditional_trigger: conditionalTrigger,
+      scenario_plan: scenarioPlan,
+    };
+  }
+
+  const tradeStatus =
+    tradeMode === "spot" && evalResult.direction === "LONG" ? "SPOT_BUY" : evalResult.direction;
+
+  return {
+    status: tradeStatus,
+    confidence_score: evalResult.score.totalScore,
+    confluence_score: evalResult.score.totalScore,
+    symbol,
+    timeframe_confluence:
+      evalResult.setupType === "BREAKOUT"
+        ? `اختراق زخم مؤكد (${quantMatrix.trend}) + RVOL ${quantMatrix.rvol.toFixed(2)}`
+        : `ارتداد تصحيحي مع الاتجاه (${quantMatrix.trend}) + RVOL ${quantMatrix.rvol.toFixed(2)}`,
+    entry_price: evalResult.entry,
+    stop_loss: evalResult.stopLoss,
+    take_profit_1: evalResult.takeProfit1,
+    take_profit_2: evalResult.takeProfit2,
+    risk_reward_ratio: evalResult.riskRewardRatio,
+    reasoning_arabic: evalResult.reasoningArabic,
     btc_warning: null,
     timestamp: Date.now(),
     quant_matrix: quantMatrix,
-    conditional_trigger: conditionalTrigger,
   };
 }
 
@@ -524,8 +453,8 @@ export async function POST(req: Request) {
 
       try {
         [candles1h, candles15m, btcDumpRisk] = await Promise.all([
-          fetchBinanceKlines(cleanSymbol, "1h", 250, tradeMode),
-          fetchBinanceKlines(cleanSymbol, "15m", 50, tradeMode),
+          fetchBinanceKlines(cleanSymbol, "1h", 500, tradeMode),
+          fetchBinanceKlines(cleanSymbol, "15m", 100, tradeMode),
           checkBtcDumpGuard(),
         ]);
       } catch (binanceErr) {

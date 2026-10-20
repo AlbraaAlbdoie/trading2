@@ -11,6 +11,7 @@ import {
   generateSyntheticGoldKlines,
 } from "@/lib/smc";
 import { computeQuantMatrix } from "@/lib/quantEngine";
+import { evaluateOpportunity } from "@/lib/opportunityRanker";
 import { isGoldMarketWeekendClosed, formatPrice } from "@/lib/utils";
 import {
   RVOL_MIN_THRESHOLD,
@@ -237,8 +238,8 @@ async function executeMarketScanCycle(triggeredBy: "cron_scheduler" | "manual_ui
           // Crypto: Real candles strictly required
           const cleanSymbol = item.symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
           [candles1h, candles15m] = await Promise.all([
-            fetchBinanceKlines(cleanSymbol, "1h", 250, "futures"),
-            fetchBinanceKlines(cleanSymbol, "15m", 50, "futures"),
+            fetchBinanceKlines(cleanSymbol, "1h", 500, "futures"),
+            fetchBinanceKlines(cleanSymbol, "15m", 100, "futures"),
           ]);
         }
 
@@ -253,54 +254,37 @@ async function executeMarketScanCycle(triggeredBy: "cron_scheduler" | "manual_ui
         // Compute Quantitative Matrix
         const quantMatrix: QuantMatrix = computeQuantMatrix(candles1h, candles15m, livePrice);
 
-        // Filter: Choppy sideways markets are discarded
-        if (quantMatrix.trend === "CHOPPY_SIDEWAYS") continue;
-
-        // Crypto rule: RVOL must be >= RVOL_MIN_THRESHOLD
-        if (!isGold && !validateRvol(quantMatrix.rvol)) continue;
-
-        // Determine Direction & Setup
-        let direction: "LONG" | "SHORT" | null = null;
-        let triggerPrice: number | null = null;
-        let targetSl: number | null = null;
-        let targetTp1: number | null = null;
-        let targetTp2: number | null = null;
-        let calculatedRr: string | null = null;
-
-        if (quantMatrix.trend === "STRONG_BULLISH" && !btcDumpRisk) {
-          direction = "LONG";
-          triggerPrice = quantMatrix.highestHigh20;
-          targetSl = quantMatrix.longLevels.mathSl;
-          targetTp1 = quantMatrix.longLevels.mathTp1;
-          targetTp2 = quantMatrix.longLevels.mathTp2;
-          calculatedRr = quantMatrix.longLevels.riskRewardRatio;
-        } else if (quantMatrix.trend === "STRONG_BEARISH") {
-          direction = "SHORT";
-          triggerPrice = quantMatrix.lowestLow20;
-          targetSl = quantMatrix.shortLevels.mathSl;
-          targetTp1 = quantMatrix.shortLevels.mathTp1;
-          targetTp2 = quantMatrix.shortLevels.mathTp2;
-          calculatedRr = quantMatrix.shortLevels.riskRewardRatio;
-        }
-
-        if (!direction || !triggerPrice || !targetSl || !targetTp1 || !targetTp2) continue;
-
-        // Compute deterministic score
-        const distPct =
-          direction === "LONG"
-            ? (triggerPrice - livePrice) / livePrice
-            : (livePrice - triggerPrice) / livePrice;
-
-        const score = computeDeterministicScore({
-          trend: quantMatrix.trend,
-          rvol: quantMatrix.rvol,
-          priceDistToExtremesPct: Math.max(0, distPct),
+        // Evaluate opportunity via multi-factor model
+        const evalResult = evaluateOpportunity({
+          symbol: item.symbol,
+          market: isGold ? "gold" : "crypto",
+          tradeMode: "futures",
+          quantMatrix,
           btcDumpRisk,
+          quoteVolume24h: item.price * 1000,
         });
 
-        // Determine initial state: TRIGGERED if already broke level, else WATCHING
+        if (!evalResult.isActionable || !evalResult.direction) continue;
+
+        const direction = evalResult.direction;
+        const triggerPrice =
+          evalResult.setupType === "BREAKOUT"
+            ? (direction === "LONG" ? quantMatrix.highestHigh20 : quantMatrix.lowestLow20)
+            : livePrice;
+
+        const targetSl = evalResult.stopLoss;
+        const targetTp1 = evalResult.takeProfit1;
+        const targetTp2 = evalResult.takeProfit2;
+        const calculatedRr = evalResult.riskRewardRatio;
+        const score = evalResult.score.totalScore;
+
+        // Determine initial state: Pullback is immediate TRIGGERED; Breakout is TRIGGERED only if level touched/broken
         const isAlreadyTriggered =
-          direction === "LONG" ? livePrice >= triggerPrice : livePrice <= triggerPrice;
+          evalResult.setupType === "PULLBACK"
+            ? true
+            : direction === "LONG"
+            ? livePrice >= triggerPrice
+            : livePrice <= triggerPrice;
 
         const initialState = isAlreadyTriggered ? "TRIGGERED" : "WATCHING";
 
