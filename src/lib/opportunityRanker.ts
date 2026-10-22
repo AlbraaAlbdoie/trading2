@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // NEXUS ALPHA — Quantitative Opportunity Ranker & Multi-Factor Scoring
-// Replaces cosmetic confidence numbers with an auditable, testable scoring model.
-// Evaluates Trend (25), Liquidity (25), Structure (20), Volatility (15), Macro (15).
-// Includes False Breakout Trap Guard, Net R:R Cost Gate, and Breakout-Only mode.
+// Heuristic Rule-Based Scoring Model: Trend (25), Liquidity (25), Structure (20), Volatility (15), Macro (15).
+// Note: Weights are disciplined engineering rules designed to filter uncompensated risk,
+// not curve-fitted parameters.
+// Includes False Breakout Trap Guard, Net R:R Cost Gate, Correlation Awareness, and Opportunity Ranking.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { QuantMatrix, TradeMode, CandleData } from "./types.ts";
@@ -10,11 +11,11 @@ import { calculateRiskReward } from "./tradePolicy.ts";
 import { roundPrice } from "./quantEngine.ts";
 
 export interface ScoreBreakdown {
-  trendScore: number;       // 0–25 pts
-  liquidityScore: number;   // 0–25 pts
-  structureScore: number;   // 0–20 pts
-  volatilityScore: number;  // 0–15 pts
-  macroScore: number;       // 0–15 pts
+  trendScore: number;       // 0–25 pts (Rule: EMA50 > EMA200 alignment and spread)
+  liquidityScore: number;   // 0–25 pts (Rule: Closed-bar RVOL >= 1.3x)
+  structureScore: number;   // 0–20 pts (Rule: Clean penetration & no trap wick)
+  volatilityScore: number;  // 0–15 pts (Rule: Healthy ATR/Price ratio 0.6%–3.5%)
+  macroScore: number;       // 0–15 pts (Rule: BTC health & exchange volume rank)
   totalScore: number;       // 0–100 pts
 }
 
@@ -45,6 +46,10 @@ export interface OpportunityEvaluation {
   riskRewardRatio: string;
   reasoningArabic: string;
   quantMatrix: QuantMatrix;
+  rank?: number;
+  isPrimaryLeader?: boolean;
+  isCorrelatedFollower?: boolean;
+  correlationNote?: string;
 }
 
 export interface RankerInput {
@@ -77,6 +82,24 @@ export function detectTrapWick(side: "LONG" | "SHORT", candle?: CandleData): boo
     // Bear trap: Large lower wick (> 35% of total candle range) indicates buyers absorbed the breakdown
     const lowerWick = Math.min(candle.open, candle.close) - candle.low;
     return lowerWick / range > 0.35;
+  }
+}
+
+/**
+ * Check clean penetration depth above/below swing extreme.
+ */
+export function checkPenetrationDepth(
+  side: "LONG" | "SHORT",
+  price: number,
+  highestHigh: number,
+  lowestLow: number,
+): boolean {
+  if (side === "LONG") {
+    // Price should be at or cleanly above highestHigh
+    return highestHigh > 0 && price >= highestHigh * 0.999;
+  } else {
+    // Price should be at or cleanly below lowestLow
+    return lowestLow > 0 && price <= lowestLow * 1.001;
   }
 }
 
@@ -142,7 +165,15 @@ export function evaluateOpportunity(input: RankerInput): OpportunityEvaluation {
   if (setupType === "BREAKOUT") {
     const directionCandidate = trend === "STRONG_BULLISH" ? "LONG" : "SHORT";
     isTrapRisk = detectTrapWick(directionCandidate, signalCandle);
-    structureScore = isTrapRisk ? 5 : 20;
+    const hasPenetration = checkPenetrationDepth(directionCandidate, currentLivePrice, highestHigh20, lowestLow20);
+
+    if (isTrapRisk) {
+      structureScore = 5; // Major penalty for trap wick
+    } else if (hasPenetration) {
+      structureScore = 20; // Clean break and solid close
+    } else {
+      structureScore = 15; // At resistance but shallow break
+    }
   } else if (setupType === "PULLBACK") {
     if (breakoutOnly) {
       structureScore = 0;
@@ -271,7 +302,6 @@ export function evaluateOpportunity(input: RankerInput): OpportunityEvaluation {
     isRewardAdequate &&
     (!breakoutOnly || setupType === "BREAKOUT");
 
-  // Construct Arabic reasoning
   let reasoningArabic = "";
   if (!isActionable) {
     switch (rejectionCode) {
@@ -323,12 +353,36 @@ export function evaluateOpportunity(input: RankerInput): OpportunityEvaluation {
 }
 
 /**
- * Rank multiple opportunities and select the highest quality setups.
+ * Rank multiple opportunities from strongest to weakest with correlation tagging.
  */
 export function rankOpportunities(evaluations: OpportunityEvaluation[]): OpportunityEvaluation[] {
-  return [...evaluations].sort((a, b) => {
+  const sorted = [...evaluations].sort((a, b) => {
+    // Actionable setups first
     if (a.isActionable && !b.isActionable) return -1;
     if (!a.isActionable && b.isActionable) return 1;
+    // Highest score first
     return b.score.totalScore - a.score.totalScore;
+  });
+
+  // Apply ranks and correlation awareness
+  const cryptoDirectionCounts: Record<string, number> = {};
+
+  return sorted.map((opp, index) => {
+    opp.rank = index + 1;
+
+    // Check correlation on actionable crypto setups
+    if (opp.isActionable && opp.market === "crypto" && opp.direction) {
+      const count = (cryptoDirectionCounts[opp.direction] || 0) + 1;
+      cryptoDirectionCounts[opp.direction] = count;
+
+      if (count === 1) {
+        opp.isPrimaryLeader = true;
+      } else {
+        opp.isCorrelatedFollower = true;
+        opp.correlationNote = `إشارة متزامنة مع حركة السوق العامة (${opp.direction})، تم تصنيفها كفرصة تابعة بعد الرمز الرائد.`;
+      }
+    }
+
+    return opp;
   });
 }

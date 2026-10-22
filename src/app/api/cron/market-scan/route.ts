@@ -255,6 +255,7 @@ async function executeMarketScanCycle(triggeredBy: "cron_scheduler" | "manual_ui
         const quantMatrix: QuantMatrix = computeQuantMatrix(candles1h, candles15m, livePrice);
 
         // Evaluate opportunity via multi-factor model
+        const lastClosedCandle = candles15m.length >= 2 ? candles15m[candles15m.length - 2] : candles15m[candles15m.length - 1];
         const evalResult = evaluateOpportunity({
           symbol: item.symbol,
           market: isGold ? "gold" : "crypto",
@@ -262,6 +263,7 @@ async function executeMarketScanCycle(triggeredBy: "cron_scheduler" | "manual_ui
           quantMatrix,
           btcDumpRisk,
           quoteVolume24h: item.price * 1000,
+          signalCandle: lastClosedCandle,
         });
 
         if (!evalResult.isActionable || !evalResult.direction) continue;

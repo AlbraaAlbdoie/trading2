@@ -1,10 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// NEXUS ALPHA — Quantitative Backtest Engine (Audited V2)
+// NEXUS ALPHA — Quantitative Backtest Engine (Audited V3 with Walk-Forward)
 // Compares:
 //   A. Legacy Strategy
 //   B. Enhanced Strategy (Breakout + Pullback)
 //   C. Breakout Only (Pullback Disabled)
 // On BTCUSDT and ETHUSDT across 15m and 1h Timeframes.
+// Features: Walk-Forward Validation, Market Regime Breakdown, Compounded Equity,
+// Conservative Intrabar Collision (SL first), Gap Protection, and 0.12% Taker Fees + Slippage.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import fs from "fs";
@@ -19,6 +21,7 @@ import { evaluateOpportunity } from "../src/lib/opportunityRanker.ts";
 import type { RejectionCode } from "../src/lib/opportunityRanker.ts";
 
 export type StrategyVariant = "legacy" | "enhanced" | "breakout_only";
+export type MarketRegime = "BULL_TREND" | "BEAR_TREND" | "CHOPPY_SIDEWAYS";
 
 export interface BacktestTrade {
   id: number;
@@ -39,6 +42,7 @@ export interface BacktestTrade {
   grossPnlPct: number;
   netPnlPct: number;
   barsHeld: number;
+  windowIndex?: number;
 }
 
 export interface PerformanceMetrics {
@@ -51,7 +55,8 @@ export interface PerformanceMetrics {
   winRatePct: number;
   grossProfitPct: number;
   grossLossPct: number;
-  netReturnPct: number;
+  additiveNetReturnPct: number;
+  compoundedNetReturnPct: number;
   profitFactor: number;
   expectancyPct: number;
   avgWinPct: number;
@@ -65,6 +70,20 @@ export interface PerformanceMetrics {
   pullbackWins: number;
   pullbackWinRatePct: number;
   rejections: Record<string, number>;
+  regime?: MarketRegime;
+}
+
+export interface WalkForwardWindow {
+  windowIndex: number;
+  trainStart: number;
+  trainEnd: number;
+  testStart: number;
+  testEnd: number;
+  trainStartDate: string;
+  trainEndDate: string;
+  testStartDate: string;
+  testEndDate: string;
+  regime: MarketRegime;
 }
 
 const TAKER_FEE_PCT = 0.04; // 0.04% Binance Futures VIP0 taker fee per side
@@ -74,7 +93,7 @@ const TOTAL_COST_PER_TRADE_PCT = (TAKER_FEE_PCT + SLIPPAGE_PCT) * 2; // 0.12% ro
 /**
  * Fetch historical candles from Binance Futures public API with local caching
  */
-export async function fetchBinanceHistory(symbol: string, interval: "15m" | "1h", totalCandles = 2500): Promise<CandleData[]> {
+export async function fetchBinanceHistory(symbol: string, interval: "15m" | "1h", totalCandles = 3500): Promise<CandleData[]> {
   const cacheDir = path.resolve(process.cwd(), ".cache", "backtest");
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
@@ -83,7 +102,10 @@ export async function fetchBinanceHistory(symbol: string, interval: "15m" | "1h"
   const cacheFile = path.join(cacheDir, `${symbol}_${interval}_${totalCandles}.json`);
   if (fs.existsSync(cacheFile)) {
     const raw = fs.readFileSync(cacheFile, "utf8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (parsed.length >= totalCandles * 0.9) {
+      return parsed;
+    }
   }
 
   console.log(`[Network Fetch] Downloading ${totalCandles} ${interval} candles for ${symbol}...`);
@@ -131,6 +153,36 @@ export async function fetchBinanceHistory(symbol: string, interval: "15m" | "1h"
 }
 
 /**
+ * Classify market regime across a segment of candles
+ */
+export function classifyMarketRegime(candles: CandleData[]): MarketRegime {
+  if (candles.length < 50) return "CHOPPY_SIDEWAYS";
+
+  let bullishBars = 0;
+  let bearishBars = 0;
+
+  // Simple price change and EMA direction test
+  const first = candles[0].close;
+  const last = candles[candles.length - 1].close;
+  const changePct = ((last - first) / first) * 100;
+
+  for (let i = 20; i < candles.length; i++) {
+    const slice = candles.slice(i - 20, i);
+    const sma20 = slice.reduce((acc, c) => acc + c.close, 0) / 20;
+    if (candles[i].close > sma20) bullishBars++;
+    else bearishBars++;
+  }
+
+  const total = candles.length - 20;
+  if (changePct > 5 && bullishBars / total > 0.60) {
+    return "BULL_TREND";
+  } else if (changePct < -5 && bearishBars / total > 0.60) {
+    return "BEAR_TREND";
+  }
+  return "CHOPPY_SIDEWAYS";
+}
+
+/**
  * Execute simulation with audited intrabar price execution, gap protection, and cost deduction.
  */
 export function simulateStrategyRun(
@@ -140,6 +192,7 @@ export function simulateStrategyRun(
   trendCandles: CandleData[],
   startBarIndex: number,
   endBarIndex: number,
+  windowIndex = 1,
 ): { trades: BacktestTrade[]; metrics: PerformanceMetrics } {
   const trades: BacktestTrade[] = [];
   let activeTrade: BacktestTrade | null = null;
@@ -180,7 +233,6 @@ export function simulateStrategyRun(
           exitPrice = activeTrade.takeProfit1;
           exitReason = "TP1";
         } else if (activeTrade.barsHeld >= (timeframe === "15m" ? 48 : 24)) {
-          // Timeout exit after holding period
           exitPrice = currentBar.close;
           exitReason = "TIMEOUT";
         }
@@ -269,6 +321,7 @@ export function simulateStrategyRun(
           grossPnlPct: 0,
           netPnlPct: 0,
           barsHeld: 0,
+          windowIndex,
         };
       } else {
         rejections["LEGACY_NO_SETUP"] = (rejections["LEGACY_NO_SETUP"] || 0) + 1;
@@ -321,6 +374,7 @@ export function simulateStrategyRun(
           grossPnlPct: 0,
           netPnlPct: 0,
           barsHeld: 0,
+          windowIndex,
         };
       } else {
         const code = evalResult.rejectionCode || "NO_SETUP";
@@ -329,16 +383,20 @@ export function simulateStrategyRun(
     }
   }
 
-  const metrics = calculateMetrics(strategyName, timeframe, totalEvaluations, trades, rejections);
+  const segmentCandles = execCandles.slice(startBarIndex, endBarIndex);
+  const regime = classifyMarketRegime(segmentCandles);
+
+  const metrics = calculateMetrics(strategyName, timeframe, totalEvaluations, trades, rejections, regime);
   return { trades, metrics };
 }
 
-function calculateMetrics(
+export function calculateMetrics(
   strategy: StrategyVariant,
   timeframe: "15m" | "1h",
   totalEvaluations: number,
   trades: BacktestTrade[],
   rejections: Record<string, number>,
+  regime?: MarketRegime,
 ): PerformanceMetrics {
   if (trades.length === 0) {
     return {
@@ -351,7 +409,8 @@ function calculateMetrics(
       winRatePct: 0,
       grossProfitPct: 0,
       grossLossPct: 0,
-      netReturnPct: 0,
+      additiveNetReturnPct: 0,
+      compoundedNetReturnPct: 0,
       profitFactor: 0,
       expectancyPct: 0,
       avgWinPct: 0,
@@ -365,6 +424,7 @@ function calculateMetrics(
       pullbackWins: 0,
       pullbackWinRatePct: 0,
       rejections,
+      regime,
     };
   }
 
@@ -372,7 +432,7 @@ function calculateMetrics(
   let losses = 0;
   let grossProfitPct = 0;
   let grossLossPct = 0;
-  let netReturnPct = 0;
+  let additiveNetReturnPct = 0;
   let totalBarsHeld = 0;
 
   let breakoutCount = 0;
@@ -380,19 +440,22 @@ function calculateMetrics(
   let pullbackCount = 0;
   let pullbackWins = 0;
 
-  let peakEquity = 0;
-  let currentEquity = 0;
-  let maxDrawdownPct = 0;
+  // Compounded equity tracking
+  let compoundedEquity = 100.0;
+  let peakCompoundedEquity = 100.0;
+  let maxCompoundedDrawdownPct = 0;
 
   for (const t of trades) {
-    netReturnPct += t.netPnlPct;
-    currentEquity += t.netPnlPct;
-    if (currentEquity > peakEquity) {
-      peakEquity = currentEquity;
+    additiveNetReturnPct += t.netPnlPct;
+
+    // Compound equity: Equity * (1 + netReturn / 100)
+    compoundedEquity = compoundedEquity * (1 + t.netPnlPct / 100);
+    if (compoundedEquity > peakCompoundedEquity) {
+      peakCompoundedEquity = compoundedEquity;
     }
-    const dd = peakEquity - currentEquity;
-    if (dd > maxDrawdownPct) {
-      maxDrawdownPct = dd;
+    const currentDd = ((peakCompoundedEquity - compoundedEquity) / peakCompoundedEquity) * 100;
+    if (currentDd > maxCompoundedDrawdownPct) {
+      maxCompoundedDrawdownPct = currentDd;
     }
 
     totalBarsHeld += t.barsHeld;
@@ -420,6 +483,7 @@ function calculateMetrics(
   const avgWinPct = wins > 0 ? Number((grossProfitPct / wins).toFixed(2)) : 0;
   const avgLossPct = losses > 0 ? Number((grossLossPct / losses).toFixed(2)) : 0;
   const expectancyPct = Number(((wins / trades.length) * avgWinPct - (losses / trades.length) * avgLossPct).toFixed(3));
+  const compoundedNetReturnPct = Number((compoundedEquity - 100.0).toFixed(2));
 
   return {
     strategy,
@@ -431,12 +495,13 @@ function calculateMetrics(
     winRatePct,
     grossProfitPct: Number(grossProfitPct.toFixed(2)),
     grossLossPct: Number(grossLossPct.toFixed(2)),
-    netReturnPct: Number(netReturnPct.toFixed(2)),
+    additiveNetReturnPct: Number(additiveNetReturnPct.toFixed(2)),
+    compoundedNetReturnPct,
     profitFactor,
     expectancyPct,
     avgWinPct,
     avgLossPct,
-    maxDrawdownPct: Number(maxDrawdownPct.toFixed(2)),
+    maxDrawdownPct: Number(maxCompoundedDrawdownPct.toFixed(2)),
     avgBarsHeld: Number((totalBarsHeld / trades.length).toFixed(1)),
     breakoutTrades: breakoutCount,
     breakoutWins,
@@ -445,15 +510,22 @@ function calculateMetrics(
     pullbackWins,
     pullbackWinRatePct: pullbackCount > 0 ? Number(((pullbackWins / pullbackCount) * 100).toFixed(1)) : 0,
     rejections,
+    regime,
   };
 }
 
 /**
- * Print 3-Way Comparison Table
+ * Print 3-Way Table
  */
-function print3WayTable(title: string, legacy: PerformanceMetrics, enhanced: PerformanceMetrics, breakoutOnly: PerformanceMetrics) {
+function print3WayTable(
+  title: string,
+  legacy: PerformanceMetrics,
+  enhanced: PerformanceMetrics,
+  breakoutOnly: PerformanceMetrics,
+  regime?: MarketRegime,
+) {
   console.log(`\n========================================================================================================`);
-  console.log(`📊 ${title}`);
+  console.log(`📊 ${title} ${regime ? `[Regime: ${regime}]` : ""}`);
   console.log(`========================================================================================================`);
   console.log(
     `Metric                      | A. Legacy Strategy     | B. Enhanced (Full)     | C. Breakout Only`,
@@ -469,10 +541,16 @@ function print3WayTable(title: string, legacy: PerformanceMetrics, enhanced: Per
       `${breakoutOnly.winRatePct}% (${breakoutOnly.wins}/${breakoutOnly.totalTrades})`,
     ],
     [
-      "Net Return (After Fees)",
-      `${legacy.netReturnPct}%`,
-      `${enhanced.netReturnPct}%`,
-      `${breakoutOnly.netReturnPct}%`,
+      "Net Return (Compounded)",
+      `${legacy.compoundedNetReturnPct}%`,
+      `${enhanced.compoundedNetReturnPct}%`,
+      `${breakoutOnly.compoundedNetReturnPct}%`,
+    ],
+    [
+      "Net Return (Additive)",
+      `${legacy.additiveNetReturnPct}%`,
+      `${enhanced.additiveNetReturnPct}%`,
+      `${breakoutOnly.additiveNetReturnPct}%`,
     ],
     [
       "Profit Factor",
@@ -493,19 +571,19 @@ function print3WayTable(title: string, legacy: PerformanceMetrics, enhanced: Per
       `+${breakoutOnly.avgWinPct}% / -${breakoutOnly.avgLossPct}%`,
     ],
     [
-      "Max Drawdown %",
+      "Max Drawdown % (Peak-to-Trough)",
       `${legacy.maxDrawdownPct}%`,
       `${enhanced.maxDrawdownPct}%`,
       `${breakoutOnly.maxDrawdownPct}%`,
     ],
     [
-      "Breakout Breakdown",
+      "Breakout Trades",
       `-`,
       `${enhanced.breakoutTrades} (${enhanced.breakoutWinRatePct}%)`,
       `${breakoutOnly.breakoutTrades} (${breakoutOnly.breakoutWinRatePct}%)`,
     ],
     [
-      "Pullback Breakdown",
+      "Pullback Trades",
       `-`,
       `${enhanced.pullbackTrades} (${enhanced.pullbackWinRatePct}%)`,
       `0 (Disabled)`,
@@ -516,90 +594,165 @@ function print3WayTable(title: string, legacy: PerformanceMetrics, enhanced: Per
     console.log(`${m.padEnd(28)}| ${a.padEnd(23)}| ${b.padEnd(23)}| ${c}`);
   }
 
-  console.log(`--------------------------------------------------------------------------------------------------------`);
-  console.log(`🔍 Top Rejection Reasons (Enhanced B vs C):`);
-  const topRejectionsB = Object.entries(enhanced.rejections).sort((x, y) => y[1] - x[1]).slice(0, 3);
-  const topRejectionsC = Object.entries(breakoutOnly.rejections).sort((x, y) => y[1] - x[1]).slice(0, 3);
-  console.log(`   • Enhanced B Filters: ${topRejectionsB.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
-  console.log(`   • Breakout C Filters: ${topRejectionsC.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
+  // Small sample size warning
+  if (breakoutOnly.totalTrades < 15) {
+    console.log(`⚠️  [Statistical Note]: Sample size (${breakoutOnly.totalTrades} trades) is limited; interpret variance carefully.`);
+  }
+
   console.log(`========================================================================================================\n`);
+}
+
+/**
+ * Build Walk-Forward Sliding Windows
+ */
+export function buildWalkForwardWindows(
+  totalBars: number,
+  warmupBars: number,
+  numWindows = 3,
+  candles: CandleData[] = [],
+): WalkForwardWindow[] {
+  const usable = totalBars - warmupBars;
+  const windowLength = Math.floor(usable / (numWindows + 1));
+  const windows: WalkForwardWindow[] = [];
+
+  for (let w = 0; w < numWindows; w++) {
+    const trainStart = warmupBars + w * Math.floor(windowLength * 0.7);
+    const trainEnd = trainStart + windowLength;
+    const testStart = trainEnd;
+    const testEnd = Math.min(totalBars, testStart + Math.floor(windowLength * 0.5));
+
+    if (testEnd <= testStart) break;
+
+    const segment = candles.slice(testStart, testEnd);
+    const regime = classifyMarketRegime(segment);
+
+    windows.push({
+      windowIndex: w + 1,
+      trainStart,
+      trainEnd,
+      testStart,
+      testEnd,
+      trainStartDate: candles[trainStart] ? new Date(candles[trainStart].openTime).toISOString().slice(0, 10) : "",
+      trainEndDate: candles[trainEnd] ? new Date(candles[trainEnd].openTime).toISOString().slice(0, 10) : "",
+      testStartDate: candles[testStart] ? new Date(candles[testStart].openTime).toISOString().slice(0, 10) : "",
+      testEndDate: candles[testEnd - 1] ? new Date(candles[testEnd - 1].closeTime).toISOString().slice(0, 10) : "",
+      regime,
+    });
+  }
+
+  return windows;
 }
 
 /**
  * Main Orchestrator
  */
 async function main() {
-  console.log(`\n🚀 NEXUS ALPHA — Quantitative Multi-Strategy Backtest Starting...`);
-  console.log(`Deductions: 0.08% Binance taker fee + 0.04% conservative slippage = 0.12% per roundtrip.`);
+  console.log(`\n🚀 NEXUS ALPHA — Quantitative Multi-Strategy Walk-Forward Engine Starting...`);
+  console.log(`Deductions: 0.08% Binance Futures taker fee + 0.04% conservative slippage = 0.12% per roundtrip.`);
 
   const symbols = ["BTCUSDT", "ETHUSDT"];
 
   for (const sym of symbols) {
     // ═════════════════════════════════════════════════════════════════════════
-    // 1. 15-Minute Timeframe Backtest (15m execution with 1h trend filter)
+    // 1. 15-Minute Timeframe Walk-Forward (15m execution with 1h trend filter)
     // ═════════════════════════════════════════════════════════════════════════
     const [c15m, c1h] = await Promise.all([
-      fetchBinanceHistory(sym, "15m", 2500),
-      fetchBinanceHistory(sym, "1h", 1000),
+      fetchBinanceHistory(sym, "15m", 3500),
+      fetchBinanceHistory(sym, "1h", 2000),
     ]);
 
     const total15m = c15m.length;
     const warmup15m = 350;
-    const usable15m = total15m - warmup15m;
-    const split15m = warmup15m + Math.floor(usable15m * 0.70);
 
-    const start15mDate = new Date(c15m[warmup15m].openTime).toISOString().slice(0, 10);
-    const split15mDate = new Date(c15m[split15m].openTime).toISOString().slice(0, 10);
-    const end15mDate = new Date(c15m[total15m - 1].closeTime).toISOString().slice(0, 10);
+    console.log(`\n################################################################################`);
+    console.log(`📈 SYMBOL: ${sym} — TIMEFRAME: 15-MINUTE (Total Bars: ${total15m})`);
+    console.log(`################################################################################`);
 
-    console.log(`\n================================================================================`);
-    console.log(`📈 SYMBOL: ${sym} — TIMEFRAME: 15-MINUTE`);
-    console.log(`Data Range: ${start15mDate} to ${end15mDate} | Split at: ${split15mDate}`);
-    console.log(`================================================================================`);
+    // Build 3 Walk-Forward Windows
+    const windows15m = buildWalkForwardWindows(total15m, warmup15m, 3, c15m);
 
-    // In-Sample 15m
-    const legIn15 = simulateStrategyRun("legacy", "15m", c15m, c1h, warmup15m, split15m);
-    const enhIn15 = simulateStrategyRun("enhanced", "15m", c15m, c1h, warmup15m, split15m);
-    const brkIn15 = simulateStrategyRun("breakout_only", "15m", c15m, c1h, warmup15m, split15m);
-    print3WayTable(`${sym} [15M] — In-Sample (Dev: 70%)`, legIn15.metrics, enhIn15.metrics, brkIn15.metrics);
+    const wfTradesLegacy: BacktestTrade[] = [];
+    const wfTradesEnhanced: BacktestTrade[] = [];
+    const wfTradesBreakout: BacktestTrade[] = [];
 
-    // Out-of-Sample 15m
-    const legOut15 = simulateStrategyRun("legacy", "15m", c15m, c1h, split15m, total15m);
-    const enhOut15 = simulateStrategyRun("enhanced", "15m", c15m, c1h, split15m, total15m);
-    const brkOut15 = simulateStrategyRun("breakout_only", "15m", c15m, c1h, split15m, total15m);
-    print3WayTable(`${sym} [15M] — Out-of-Sample (Strict Validation: 30%)`, legOut15.metrics, enhOut15.metrics, brkOut15.metrics);
+    for (const win of windows15m) {
+      console.log(`\n▶ [Walk-Forward Window ${win.windowIndex}]:`);
+      console.log(`   Train Period: ${win.trainStartDate} -> ${win.trainEndDate} (${win.trainEnd - win.trainStart} bars)`);
+      console.log(`   Test Period:  ${win.testStartDate} -> ${win.testEndDate} (${win.testEnd - win.testStart} bars) | Regime: ${win.regime}`);
+
+      // Run Out-of-Sample test on this window
+      const legRun = simulateStrategyRun("legacy", "15m", c15m, c1h, win.testStart, win.testEnd, win.windowIndex);
+      const enhRun = simulateStrategyRun("enhanced", "15m", c15m, c1h, win.testStart, win.testEnd, win.windowIndex);
+      const brkRun = simulateStrategyRun("breakout_only", "15m", c15m, c1h, win.testStart, win.testEnd, win.windowIndex);
+
+      wfTradesLegacy.push(...legRun.trades);
+      wfTradesEnhanced.push(...enhRun.trades);
+      wfTradesBreakout.push(...brkRun.trades);
+
+      print3WayTable(
+        `${sym} [15M] — Window ${win.windowIndex} Out-of-Sample`,
+        legRun.metrics,
+        enhRun.metrics,
+        brkRun.metrics,
+        win.regime,
+      );
+    }
+
+    // Aggregated Walk-Forward Out-of-Sample Results
+    const aggLegacy = calculateMetrics("legacy", "15m", 0, wfTradesLegacy, {});
+    const aggEnhanced = calculateMetrics("enhanced", "15m", 0, wfTradesEnhanced, {});
+    const aggBreakout = calculateMetrics("breakout_only", "15m", 0, wfTradesBreakout, {});
+
+    console.log(`\n🏆 [AGGREGATED WALK-FORWARD SUMMARY — ${sym} 15M (All Out-of-Sample Windows Combined)]:`);
+    print3WayTable(`${sym} [15M] — FULL WALK-FORWARD OUT-OF-SAMPLE`, aggLegacy, aggEnhanced, aggBreakout);
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 2. 1-Hour Timeframe Backtest (1h execution with 1h trend filter)
+    // 2. 1-Hour Timeframe Walk-Forward (1h execution)
     // ═════════════════════════════════════════════════════════════════════════
     const total1h = c1h.length;
     const warmup1h = 250;
-    const usable1h = total1h - warmup1h;
-    const split1h = warmup1h + Math.floor(usable1h * 0.70);
 
-    const start1hDate = new Date(c1h[warmup1h].openTime).toISOString().slice(0, 10);
-    const split1hDate = new Date(c1h[split1h].openTime).toISOString().slice(0, 10);
-    const end1hDate = new Date(c1h[total1h - 1].closeTime).toISOString().slice(0, 10);
+    console.log(`\n################################################################################`);
+    console.log(`📈 SYMBOL: ${sym} — TIMEFRAME: 1-HOUR (Total Bars: ${total1h})`);
+    console.log(`################################################################################`);
 
-    console.log(`\n================================================================================`);
-    console.log(`📈 SYMBOL: ${sym} — TIMEFRAME: 1-HOUR`);
-    console.log(`Data Range: ${start1hDate} to ${end1hDate} | Split at: ${split1hDate}`);
-    console.log(`================================================================================`);
+    const windows1h = buildWalkForwardWindows(total1h, warmup1h, 2, c1h);
 
-    // In-Sample 1h
-    const legIn1h = simulateStrategyRun("legacy", "1h", c1h, c1h, warmup1h, split1h);
-    const enhIn1h = simulateStrategyRun("enhanced", "1h", c1h, c1h, warmup1h, split1h);
-    const brkIn1h = simulateStrategyRun("breakout_only", "1h", c1h, c1h, warmup1h, split1h);
-    print3WayTable(`${sym} [1H] — In-Sample (Dev: 70%)`, legIn1h.metrics, enhIn1h.metrics, brkIn1h.metrics);
+    const wfTradesLegacy1h: BacktestTrade[] = [];
+    const wfTradesEnhanced1h: BacktestTrade[] = [];
+    const wfTradesBreakout1h: BacktestTrade[] = [];
 
-    // Out-of-Sample 1h
-    const legOut1h = simulateStrategyRun("legacy", "1h", c1h, c1h, split1h, total1h);
-    const enhOut1h = simulateStrategyRun("enhanced", "1h", c1h, c1h, split1h, total1h);
-    const brkOut1h = simulateStrategyRun("breakout_only", "1h", c1h, c1h, split1h, total1h);
-    print3WayTable(`${sym} [1H] — Out-of-Sample (Strict Validation: 30%)`, legOut1h.metrics, enhOut1h.metrics, brkOut1h.metrics);
+    for (const win of windows1h) {
+      console.log(`\n▶ [Walk-Forward Window ${win.windowIndex} (1H)]:`);
+      console.log(`   Train Period: ${win.trainStartDate} -> ${win.trainEndDate} (${win.trainEnd - win.trainStart} bars)`);
+      console.log(`   Test Period:  ${win.testStartDate} -> ${win.testEndDate} (${win.testEnd - win.testStart} bars) | Regime: ${win.regime}`);
+
+      const legRun = simulateStrategyRun("legacy", "1h", c1h, c1h, win.testStart, win.testEnd, win.windowIndex);
+      const enhRun = simulateStrategyRun("enhanced", "1h", c1h, c1h, win.testStart, win.testEnd, win.windowIndex);
+      const brkRun = simulateStrategyRun("breakout_only", "1h", c1h, c1h, win.testStart, win.testEnd, win.windowIndex);
+
+      wfTradesLegacy1h.push(...legRun.trades);
+      wfTradesEnhanced1h.push(...enhRun.trades);
+      wfTradesBreakout1h.push(...brkRun.trades);
+
+      print3WayTable(
+        `${sym} [1H] — Window ${win.windowIndex} Out-of-Sample`,
+        legRun.metrics,
+        enhRun.metrics,
+        brkRun.metrics,
+        win.regime,
+      );
+    }
+
+    const aggLegacy1h = calculateMetrics("legacy", "1h", 0, wfTradesLegacy1h, {});
+    const aggEnhanced1h = calculateMetrics("enhanced", "1h", 0, wfTradesEnhanced1h, {});
+    const aggBreakout1h = calculateMetrics("breakout_only", "1h", 0, wfTradesBreakout1h, {});
+
+    console.log(`\n🏆 [AGGREGATED WALK-FORWARD SUMMARY — ${sym} 1H (All Out-of-Sample Windows Combined)]:`);
+    print3WayTable(`${sym} [1H] — FULL WALK-FORWARD OUT-OF-SAMPLE`, aggLegacy1h, aggEnhanced1h, aggBreakout1h);
   }
 
-  console.log(`🏁 All Multi-Timeframe Multi-Strategy Backtests Complete.`);
+  console.log(`🏁 Complete Multi-Strategy Walk-Forward Analysis Finished.`);
 }
 
 main().catch((err) => {

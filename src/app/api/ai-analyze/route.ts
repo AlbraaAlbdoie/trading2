@@ -271,6 +271,7 @@ function generateDeterministicQuantRecommendation(
   btcDumpRisk: boolean,
   tradeMode: "futures" | "spot",
   market: "crypto" | "gold" = "crypto",
+  signalCandle?: CandleData,
 ): AiTradeRecommendation {
   const conditionalTrigger = computeConditionalTrigger(quantMatrix);
   const scenarioPlan = computeScenarioPlan(quantMatrix);
@@ -305,6 +306,7 @@ function generateDeterministicQuantRecommendation(
     tradeMode,
     quantMatrix,
     btcDumpRisk,
+    signalCandle,
   });
 
   if (!evalResult.isActionable || !evalResult.direction) {
@@ -524,6 +526,7 @@ export async function POST(req: Request) {
 
     // Compute Bullet Strategy as complementary confluence indicator
     const bulletSignal = calculateBulletSignal(candles15m);
+    const lastClosedCandle = candles15m.length >= 2 ? candles15m[candles15m.length - 2] : candles15m[candles15m.length - 1];
 
     // ── Step 3: Fast-Path No-Trade Checks & Smart Credit Saver ──
     if (btcDumpRisk && !isGold) {
@@ -532,6 +535,8 @@ export async function POST(req: Request) {
         quantMatrix,
         true,
         tradeMode,
+        market,
+        lastClosedCandle,
       );
       btcAlertRec.model_used = "BTC Dump Guard Engine";
       btcAlertRec.bullet_signal = bulletSignal;
@@ -545,6 +550,8 @@ export async function POST(req: Request) {
         quantMatrix,
         false,
         tradeMode,
+        market,
+        lastClosedCandle,
       );
       creditSaverRec.model_used = "Deterministic Quant Engine (Smart Credit Saver)";
       creditSaverRec.bullet_signal = bulletSignal;
@@ -694,6 +701,8 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
         quantMatrix,
         btcDumpRisk,
         tradeMode,
+        market,
+        lastClosedCandle,
       );
       fallbackRec.model_used = `Deterministic Quant Engine (${modelName || "محرك الرياضيات الصارم"})`;
       fallbackRec.bullet_signal = bulletSignal;
