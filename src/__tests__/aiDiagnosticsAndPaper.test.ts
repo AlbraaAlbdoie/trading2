@@ -214,6 +214,11 @@ describe("Paper Trading Simulated Execution Lifecycle", () => {
     const justClosed: PaperTradeHistory[] = [];
 
     for (const pos of account.positions) {
+      if (!currentPrice || currentPrice <= 0 || isNaN(currentPrice)) {
+        survivingPositions.push(pos);
+        continue;
+      }
+
       let closedReason: PaperTradeHistory["closeReason"] | null = null;
 
       if (pos.direction === "LONG" || pos.direction === "SPOT_BUY") {
@@ -453,5 +458,149 @@ describe("Paper Trading Simulated Execution Lifecycle", () => {
     // Short profited from downward price movement
     assert.ok(closedTrades[0].pnl > 0);
     assert.ok(updatedAccount.balance > 10000);
+  });
+
+  test("[PAPER-05] Price Gap Handling: Exits at actual gap price, not the theoretical SL level", () => {
+    const initialAccount: PaperAccount = {
+      balance: 10000,
+      initialBalance: 10000,
+      equity: 10000,
+      positions: [],
+      history: [],
+    };
+
+    const mockRec: AiTradeRecommendation = {
+      status: "LONG",
+      confidence_score: 80,
+      symbol: "ETHUSDT",
+      timeframe_confluence: "15M",
+      entry_price: 3000,
+      stop_loss: 2900,
+      take_profit_1: 3200,
+      take_profit_2: 3400,
+      risk_reward_ratio: "1:2",
+      reasoning_arabic: "اختراق",
+      btc_warning: null,
+      timestamp: Date.now(),
+    };
+
+    const opened = simulateOpenPaperTrade(initialAccount, mockRec, 1000);
+    // Severe flash crash gap: drops from 3000 straight to 2800 (well below SL 2900)
+    const { updatedAccount, closedTrades } = simulateTickUpdate(opened, 2800);
+
+    assert.equal(closedTrades.length, 1);
+    assert.equal(closedTrades[0].closeReason, "STOP_LOSS");
+    // Exit price must be based on 2800 (with slippage: 2800 * 0.9996 = 2798.88), NOT 2900
+    assert.equal(closedTrades[0].exitPrice, 2798.88);
+  });
+
+  test("[PAPER-06] Data Disconnection / Zero Price Handling: Zero or missing prices do not close or corrupt positions", () => {
+    const initialAccount: PaperAccount = {
+      balance: 10000,
+      initialBalance: 10000,
+      equity: 10000,
+      positions: [],
+      history: [],
+    };
+
+    const mockRec: AiTradeRecommendation = {
+      status: "LONG",
+      confidence_score: 85,
+      symbol: "BTCUSDT",
+      timeframe_confluence: "1H",
+      entry_price: 65000,
+      stop_loss: 63000,
+      take_profit_1: 68000,
+      take_profit_2: 70000,
+      risk_reward_ratio: "1:2",
+      reasoning_arabic: "صعود",
+      btc_warning: null,
+      timestamp: Date.now(),
+    };
+
+    const opened = simulateOpenPaperTrade(initialAccount, mockRec, 1000);
+    // Disconnection / invalid price feed (0 or -1)
+    const { updatedAccount: stepZero, closedTrades: closedZero } = simulateTickUpdate(opened, 0);
+    assert.equal(stepZero.positions.length, 1);
+    assert.equal(closedZero.length, 0);
+
+    const { updatedAccount: stepNeg, closedTrades: closedNeg } = simulateTickUpdate(opened, -50);
+    assert.equal(stepNeg.positions.length, 1);
+    assert.equal(closedNeg.length, 0);
+  });
+
+  test("[PAPER-07] Duplicate Price Updates & Mark-to-Market: Repeated identical ticks do not duplicate trades", () => {
+    const initialAccount: PaperAccount = {
+      balance: 10000,
+      initialBalance: 10000,
+      equity: 10000,
+      positions: [],
+      history: [],
+    };
+
+    const mockRec: AiTradeRecommendation = {
+      status: "LONG",
+      confidence_score: 85,
+      symbol: "BTCUSDT",
+      timeframe_confluence: "1H",
+      entry_price: 65000,
+      stop_loss: 63000,
+      take_profit_1: 68000,
+      take_profit_2: 70000,
+      risk_reward_ratio: "1:2",
+      reasoning_arabic: "صعود",
+      btc_warning: null,
+      timestamp: Date.now(),
+    };
+
+    const opened = simulateOpenPaperTrade(initialAccount, mockRec, 1000);
+    // Tick 1
+    const { updatedAccount: tick1, closedTrades: c1 } = simulateTickUpdate(opened, 65500);
+    assert.equal(c1.length, 0);
+    assert.equal(tick1.positions.length, 1);
+    const pnl1 = tick1.positions[0].unrealizedPnl;
+
+    // Tick 2 (identical price 65500)
+    const { updatedAccount: tick2, closedTrades: c2 } = simulateTickUpdate(tick1, 65500);
+    assert.equal(c2.length, 0);
+    assert.equal(tick2.positions.length, 1);
+    assert.equal(tick2.positions[0].unrealizedPnl, pnl1);
+    assert.equal(tick2.history.length, 0);
+  });
+
+  test("[PAPER-08] Double Close Prevention: Position is removed immediately upon close and cannot close again", () => {
+    const initialAccount: PaperAccount = {
+      balance: 10000,
+      initialBalance: 10000,
+      equity: 10000,
+      positions: [],
+      history: [],
+    };
+
+    const mockRec: AiTradeRecommendation = {
+      status: "LONG",
+      confidence_score: 85,
+      symbol: "BTCUSDT",
+      timeframe_confluence: "1H",
+      entry_price: 65000,
+      stop_loss: 63000,
+      take_profit_1: 68000,
+      take_profit_2: 70000,
+      risk_reward_ratio: "1:2",
+      reasoning_arabic: "صعود",
+      btc_warning: null,
+      timestamp: Date.now(),
+    };
+
+    const opened = simulateOpenPaperTrade(initialAccount, mockRec, 1000);
+    // Hits TP1
+    const { updatedAccount, closedTrades } = simulateTickUpdate(opened, 68500);
+    assert.equal(closedTrades.length, 1);
+    assert.equal(updatedAccount.positions.length, 0);
+
+    // Subsequent tick arrives for the same symbol
+    const { updatedAccount: subsequent, closedTrades: subClosed } = simulateTickUpdate(updatedAccount, 69000);
+    assert.equal(subClosed.length, 0);
+    assert.equal(subsequent.history.length, 1);
   });
 });

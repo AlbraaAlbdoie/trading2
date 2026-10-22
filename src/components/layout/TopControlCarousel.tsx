@@ -97,13 +97,15 @@ export function TopControlCarousel() {
     if (!carouselRef.current) return;
     const container = carouselRef.current;
     const items = container.querySelectorAll<HTMLElement>("[data-section-item]");
-    const containerCenter = container.scrollLeft + container.clientWidth / 2;
+    const containerRect = container.getBoundingClientRect();
+    const containerCenter = containerRect.left + containerRect.width / 2;
 
     let closestIndex = 0;
     let minDistance = Infinity;
 
     items.forEach((item, idx) => {
-      const itemCenter = item.offsetLeft + item.clientWidth / 2;
+      const itemRect = item.getBoundingClientRect();
+      const itemCenter = itemRect.left + itemRect.width / 2;
       const distance = Math.abs(containerCenter - itemCenter);
       if (distance < minDistance) {
         minDistance = distance;

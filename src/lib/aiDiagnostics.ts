@@ -104,7 +104,8 @@ export async function testAiConnectionProbe(
       });
     } else {
       // Google Gemini Probe
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${activeKey}`;
+      const geminiModel = model.startsWith("gemini") ? model : "gemini-2.0-flash";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${activeKey}`;
       res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

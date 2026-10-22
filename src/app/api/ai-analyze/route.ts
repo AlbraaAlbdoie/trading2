@@ -702,6 +702,8 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
             risk_reward_ratio: "0:0",
             timeframe_confluence: `رُفضت الصفقة بواسطة المحقق النهائي (${validation.code})`,
             reasoning_arabic: `⚠️ تم رفض هذه الإشارة بواسطة محقق التداول النهائي: ${validation.reason} — لم يتم إصدار أي توصية تداول.`,
+            ai_source_type: "FALLBACK_DETERMINISTIC",
+            ai_error_reason: `تم رفض مقترح AI بواسطة محقق المخاطر النهائي (${validation.code}): ${validation.reason}`,
           });
         }
       }
