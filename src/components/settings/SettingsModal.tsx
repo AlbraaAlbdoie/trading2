@@ -36,8 +36,15 @@ export function SettingsModal() {
     setApiSettings,
     addToast,
     triggerTestSignalPipeline,
+    testAiConnection,
   } = useDashboardStore();
-  const { isSettingsOpen, apiSettings, audioEnabled } = state;
+  const {
+    isSettingsOpen,
+    apiSettings,
+    audioEnabled,
+    lastAiTestResult,
+    isTestingAiConnection,
+  } = state;
 
   const [formData, setFormData] = useState<ApiSettingsConfig>(() => {
     return {
@@ -67,6 +74,20 @@ export function SettingsModal() {
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
 
   if (!isSettingsOpen) return null;
+
+  const handleTestAi = async () => {
+    let currentKey = formData.geminiKey;
+    if (formData.selectedModel.startsWith("groq")) {
+      currentKey = formData.groqKey;
+    } else if (
+      formData.selectedModel === "claude-3.5-sonnet" ||
+      formData.selectedModel === "gpt-4o"
+    ) {
+      currentKey = formData.openRouterKey;
+    }
+
+    await testAiConnection(currentKey, formData.selectedModel);
+  };
 
   const toggleShow = (key: string) => {
     setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -193,6 +214,61 @@ export function SettingsModal() {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Real AI Connection Test Diagnostic Panel */}
+            <div className="p-3 rounded-xl bg-[#080C14] border border-[#8B5CF6]/30 space-y-2 mt-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[#E2E8F0]">
+                  <Sparkles className="h-4 w-4 text-[#8B5CF6]" />
+                  <span>فحص اتصال نموذج الذكاء الاصطناعي الفعلي</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={handleTestAi}
+                  disabled={isTestingAiConnection}
+                  className="h-7 px-3 text-xs border-[#8B5CF6]/50 text-[#C4B5FD] hover:bg-[#8B5CF6]/20 hover:border-[#8B5CF6] font-semibold gap-1.5 cursor-pointer"
+                >
+                  {isTestingAiConnection ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#8B5CF6]" />
+                      <span>جارٍ قياس الاستجابة...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 text-[#8B5CF6]" />
+                      <span>اختبار الاتصال (Test Connection)</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {lastAiTestResult && (
+                <div
+                  className={`p-2.5 rounded-lg border text-xs font-mono transition-all ${
+                    lastAiTestResult.ok
+                      ? "bg-[#10B981]/10 border-[#10B981]/40 text-[#10B981]"
+                      : lastAiTestResult.status === "RATE_LIMIT" || lastAiTestResult.status === "QUOTA_EXCEEDED"
+                      ? "bg-[#F59E0B]/10 border-[#F59E0B]/40 text-[#F59E0B]"
+                      : "bg-[#F43F5E]/10 border-[#F43F5E]/40 text-[#F43F5E]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold mb-1">
+                    <span>{lastAiTestResult.messageArabic}</span>
+                    {lastAiTestResult.latencyMs > 0 && (
+                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-black/40">
+                        ⚡ {lastAiTestResult.latencyMs}ms
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-[#94A3B8] pt-1 border-t border-white/10 font-sans">
+                    <span>المزود: {lastAiTestResult.provider} ({lastAiTestResult.model})</span>
+                    <span>{lastAiTestResult.balanceInfo}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

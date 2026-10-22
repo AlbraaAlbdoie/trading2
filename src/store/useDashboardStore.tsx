@@ -28,6 +28,11 @@ import type {
   ToastNotification,
   AuthUser,
   SavedSignalItem,
+  PaperAccount,
+  PaperPosition,
+  PaperTradeHistory,
+  AiTestConnectionResult,
+  AiModelOption,
 } from "@/lib/types";
 import { DEFAULT_API_KEYS } from "@/lib/constants";
 import { playTradeChime } from "@/hooks/useAudioAlert";
@@ -42,6 +47,7 @@ import { sendTelegramTradeAlert } from "@/lib/telegram";
 const STORAGE_KEY_SETTINGS = "nexus_alpha_api_settings";
 const STORAGE_KEY_JOURNAL = "nexus_alpha_trade_journal";
 const STORAGE_KEY_SAVED_FALLBACK = "nexus_alpha_saved_signals_local";
+const STORAGE_KEY_PAPER_ACCOUNT = "nexus_alpha_paper_account";
 
 // ── State Shape ───────────────────────────────────────────────────────
 interface StoreState {
@@ -64,6 +70,14 @@ interface StoreState {
   isAiAnalyzing: boolean;
   isAutoScanning: boolean;
   autoScanProgress: string;
+  // AI Diagnostics & Testing
+  lastAiTestResult: AiTestConnectionResult | null;
+  isTestingAiConnection: boolean;
+  // Top Carousel / Swipe Navigation
+  activeControlSection: number; // 0: AutoMonitor, 1: ApiSettings, 2: AiStatus, 3: RiskSettings, 4: PaperTrading
+  // Paper Trading (Simulated Execution)
+  paperAccount: PaperAccount;
+  isPaperModalOpen: boolean;
   // Journal & Toast States
   journalEntries: TradeJournalEntry[];
   isJournalOpen: boolean;
@@ -87,6 +101,14 @@ const initialBtcHealth: BtcHealthState = {
   lastUpdate: 0,
 };
 
+const initialPaperAccount: PaperAccount = {
+  balance: 10000,
+  initialBalance: 10000,
+  equity: 10000,
+  positions: [],
+  history: [],
+};
+
 const initialState: StoreState = {
   activeMarket: "crypto",
   tradeMode: "futures",
@@ -106,6 +128,11 @@ const initialState: StoreState = {
   isAiAnalyzing: false,
   isAutoScanning: false,
   autoScanProgress: "",
+  lastAiTestResult: null,
+  isTestingAiConnection: false,
+  activeControlSection: 0,
+  paperAccount: initialPaperAccount,
+  isPaperModalOpen: false,
   journalEntries: [],
   isJournalOpen: false,
   toasts: [],
@@ -154,7 +181,114 @@ type Action =
   | { type: "ADD_SAVED_SIGNAL"; payload: SavedSignalItem }
   | { type: "REMOVE_SAVED_SIGNAL"; payload: string }
   | { type: "SET_SAVING_SIGNAL"; payload: boolean }
-  | { type: "SET_MOBILE_TAB"; payload: "screener" | "chart" | "ai" };
+  | { type: "SET_MOBILE_TAB"; payload: "screener" | "chart" | "ai" }
+  | { type: "SET_PAPER_ACCOUNT"; payload: PaperAccount }
+  | { type: "SET_PAPER_MODAL_OPEN"; payload: boolean }
+  | { type: "SET_ACTIVE_CONTROL_SECTION"; payload: number }
+  | { type: "SET_AI_TEST_RESULT"; payload: AiTestConnectionResult | null }
+  | { type: "SET_TESTING_AI_CONNECTION"; payload: boolean }
+  | { type: "RESET_PAPER_ACCOUNT" };
+
+function updatePaperPositionsWithPrices(
+  account: PaperAccount,
+  priceLookup: (symbol: string) => number | undefined,
+): PaperAccount {
+  if (account.positions.length === 0) return account;
+
+  let positionsChanged = false;
+  let newBalance = account.balance;
+  const survivingPositions: PaperPosition[] = [];
+  const newHistory: PaperTradeHistory[] = [...account.history];
+
+  for (const pos of account.positions) {
+    const livePrice = priceLookup(pos.symbol);
+    if (!livePrice || livePrice <= 0) {
+      survivingPositions.push(pos);
+      continue;
+    }
+
+    positionsChanged = true;
+    let closedReason: PaperTradeHistory["closeReason"] | null = null;
+
+    if (pos.direction === "LONG" || pos.direction === "SPOT_BUY") {
+      if (pos.stopLoss > 0 && livePrice <= pos.stopLoss) {
+        closedReason = "STOP_LOSS";
+      } else if (pos.takeProfit2 > 0 && livePrice >= pos.takeProfit2) {
+        closedReason = "TAKE_PROFIT_2";
+      } else if (pos.takeProfit1 > 0 && livePrice >= pos.takeProfit1) {
+        closedReason = "TAKE_PROFIT_1";
+      }
+    } else if (pos.direction === "SHORT") {
+      if (pos.stopLoss > 0 && livePrice >= pos.stopLoss) {
+        closedReason = "STOP_LOSS";
+      } else if (pos.takeProfit2 > 0 && livePrice <= pos.takeProfit2) {
+        closedReason = "TAKE_PROFIT_2";
+      } else if (pos.takeProfit1 > 0 && livePrice <= pos.takeProfit1) {
+        closedReason = "TAKE_PROFIT_1";
+      }
+    }
+
+    if (closedReason) {
+      const exitSlippage = pos.direction === "SHORT" ? 1.0004 : 0.9996;
+      const exitPrice = livePrice * exitSlippage;
+      const exitFee = pos.amount * 0.0008;
+      const totalFees = pos.feesPaid + exitFee;
+      const grossPnl =
+        pos.direction === "SHORT"
+          ? (pos.entryPrice - exitPrice) * pos.quantity
+          : (exitPrice - pos.entryPrice) * pos.quantity;
+      const netPnl = grossPnl - exitFee;
+      const pnlPct = (netPnl / pos.amount) * 100;
+
+      newBalance += pos.amount + netPnl;
+      newHistory.unshift({
+        id: `pclose_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        positionId: pos.id,
+        symbol: pos.symbol,
+        direction: pos.direction,
+        entryPrice: pos.entryPrice,
+        exitPrice: Math.round(exitPrice * 10000) / 10000,
+        amount: pos.amount,
+        quantity: pos.quantity,
+        pnl: Math.round(netPnl * 100) / 100,
+        pnlPct: Math.round(pnlPct * 100) / 100,
+        totalFees: Math.round(totalFees * 100) / 100,
+        closeReason: closedReason,
+        openedAt: pos.openedAt,
+        closedAt: Date.now(),
+        modelUsed: pos.modelUsed,
+      });
+    } else {
+      const simExitSlippage = pos.direction === "SHORT" ? 1.0004 : 0.9996;
+      const simExitPrice = livePrice * simExitSlippage;
+      const exitFee = pos.amount * 0.0008;
+      const grossPnl =
+        pos.direction === "SHORT"
+          ? (pos.entryPrice - simExitPrice) * pos.quantity
+          : (simExitPrice - pos.entryPrice) * pos.quantity;
+      const netPnl = grossPnl - exitFee;
+      const pnlPct = (netPnl / pos.amount) * 100;
+
+      survivingPositions.push({
+        ...pos,
+        currentPrice: livePrice,
+        unrealizedPnl: Math.round(netPnl * 100) / 100,
+        unrealizedPnlPct: Math.round(pnlPct * 100) / 100,
+      });
+    }
+  }
+
+  if (!positionsChanged) return account;
+
+  const totalUnrealized = survivingPositions.reduce((s, p) => s + p.unrealizedPnl, 0);
+  return {
+    ...account,
+    balance: Math.round(newBalance * 100) / 100,
+    equity: Math.round((newBalance + totalUnrealized) * 100) / 100,
+    positions: survivingPositions,
+    history: newHistory,
+  };
+}
 
 function reducer(state: StoreState, action: Action): StoreState {
   switch (action.type) {
@@ -176,16 +310,36 @@ function reducer(state: StoreState, action: Action): StoreState {
       return { ...state, audioEnabled: action.payload };
     case "SET_WS_STATUS":
       return { ...state, wsStatus: action.payload };
-    case "UPDATE_TICKERS":
-      return { ...state, tickers: action.payload };
+    case "UPDATE_TICKERS": {
+      const tickerMap = new Map(action.payload.map((t) => [t.symbol, t.markPrice]));
+      const updatedPaperAccount = updatePaperPositionsWithPrices(
+        state.paperAccount,
+        (sym) => tickerMap.get(sym),
+      );
+      return {
+        ...state,
+        tickers: action.payload,
+        paperAccount: updatedPaperAccount,
+      };
+    }
     case "UPDATE_BTC_HEALTH":
       return {
         ...state,
         btcHealth: action.payload,
         noTradeMode: action.payload.health === "HIGH_RISK",
       };
-    case "UPDATE_GOLD":
-      return { ...state, goldTicker: action.payload };
+    case "UPDATE_GOLD": {
+      const goldPrice = action.payload.price;
+      const updatedPaperAccount = updatePaperPositionsWithPrices(
+        state.paperAccount,
+        (sym) => (sym === "XAUUSD" || sym === "XAU/USD" ? goldPrice : undefined),
+      );
+      return {
+        ...state,
+        goldTicker: action.payload,
+        paperAccount: updatedPaperAccount,
+      };
+    }
     case "SET_NO_TRADE":
       return { ...state, noTradeMode: action.payload };
     case "SET_TIMEFRAME":
@@ -202,6 +356,18 @@ function reducer(state: StoreState, action: Action): StoreState {
       return { ...state, isAutoScanning: action.payload };
     case "SET_AUTO_SCAN_PROGRESS":
       return { ...state, autoScanProgress: action.payload };
+    case "SET_AI_TEST_RESULT":
+      return { ...state, lastAiTestResult: action.payload };
+    case "SET_TESTING_AI_CONNECTION":
+      return { ...state, isTestingAiConnection: action.payload };
+    case "SET_ACTIVE_CONTROL_SECTION":
+      return { ...state, activeControlSection: action.payload };
+    case "SET_PAPER_ACCOUNT":
+      return { ...state, paperAccount: action.payload };
+    case "SET_PAPER_MODAL_OPEN":
+      return { ...state, isPaperModalOpen: action.payload };
+    case "RESET_PAPER_ACCOUNT":
+      return { ...state, paperAccount: initialPaperAccount };
     case "SET_JOURNAL_OPEN":
       return { ...state, isJournalOpen: action.payload };
     case "SET_JOURNAL_ENTRIES":
@@ -287,6 +453,13 @@ interface StoreContextType {
   fetchSavedSignals: () => Promise<void>;
   setMobileActiveTab: (tab: "screener" | "chart" | "ai") => void;
   triggerTestSignalPipeline: () => Promise<void>;
+  // Paper Trading & Diagnostics Actions
+  openPaperTrade: (rec?: AiTradeRecommendation, customAmount?: number) => void;
+  closePaperPosition: (positionId: string, reason?: PaperTradeHistory["closeReason"]) => void;
+  resetPaperAccount: () => void;
+  setIsPaperModalOpen: (open: boolean) => void;
+  setActiveControlSection: (idx: number) => void;
+  testAiConnection: (customKey?: string, customModel?: AiModelOption) => Promise<AiTestConnectionResult>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -422,10 +595,27 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           payload: JSON.parse(savedJournal),
         });
       }
+
+      const savedPaper = localStorage.getItem(STORAGE_KEY_PAPER_ACCOUNT);
+      if (savedPaper) {
+        dispatch({
+          type: "SET_PAPER_ACCOUNT",
+          payload: JSON.parse(savedPaper),
+        });
+      }
     } catch {
       // storage error
     }
   }, []);
+
+  // Save Paper Account to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_PAPER_ACCOUNT, JSON.stringify(state.paperAccount));
+    } catch {
+      // storage error
+    }
+  }, [state.paperAccount]);
 
   // Save Journal to localStorage
   useEffect(() => {
@@ -939,6 +1129,210 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, [state.tickers, state.tradeMode, state.apiSettings, state.audioEnabled, recordTradeSignal, addToast]);
 
+  // ── Paper Trading Handlers ──────────────────────────────────────────
+  const openPaperTrade = useCallback(
+    (rec?: AiTradeRecommendation, customAmount = 1000) => {
+      const targetRec = rec || state.aiRecommendation;
+      if (!targetRec) {
+        addToast("لا توجد توصية تداول نشطة لفتح صفقة تجريبية", "info");
+        return;
+      }
+
+      if (
+        targetRec.status === "NO_CLEAR_SETUP" ||
+        targetRec.status === "MARKET_CLOSED"
+      ) {
+        addToast("لا يمكن فتح صفقة تجريبية في وضع [البقاء كاش / سوق مغلق]", "info");
+        return;
+      }
+
+      const tradeAmount = Math.max(10, customAmount);
+      if (state.paperAccount.balance < tradeAmount) {
+        addToast(
+          `الرصيد الافتراضي ($${state.paperAccount.balance.toFixed(2)}) لا يكفي لتخصيص $${tradeAmount}`,
+          "error",
+        );
+        return;
+      }
+
+      // Simulated slippage: +0.04% for LONG, -0.04% for SHORT
+      const isShort = targetRec.status === "SHORT";
+      const entryPrice = targetRec.entry_price > 0 ? targetRec.entry_price : 1;
+      const simEntry = isShort ? entryPrice * 0.9996 : entryPrice * 1.0004;
+
+      // Simulated fee: 0.08% taker fee
+      const entryFee = tradeAmount * 0.0008;
+      const effectiveCapital = tradeAmount - entryFee;
+      const quantity = effectiveCapital / simEntry;
+
+      const newPosition: PaperPosition = {
+        id: `ppos_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        symbol: targetRec.symbol,
+        direction: targetRec.status,
+        entryPrice: Math.round(simEntry * 10000) / 10000,
+        currentPrice: entryPrice,
+        amount: tradeAmount,
+        quantity,
+        stopLoss: targetRec.stop_loss,
+        takeProfit1: targetRec.take_profit_1,
+        takeProfit2: targetRec.take_profit_2,
+        unrealizedPnl: Math.round(-entryFee * 100) / 100,
+        unrealizedPnlPct: Math.round((-entryFee / tradeAmount) * 10000) / 100,
+        feesPaid: Math.round(entryFee * 100) / 100,
+        openedAt: Date.now(),
+        modelUsed: targetRec.model_used,
+        aiSourceType: targetRec.ai_source_type,
+      };
+
+      const updatedAccount: PaperAccount = {
+        ...state.paperAccount,
+        balance: Math.round((state.paperAccount.balance - tradeAmount) * 100) / 100,
+        equity: Math.round((state.paperAccount.equity - entryFee) * 100) / 100,
+        positions: [newPosition, ...state.paperAccount.positions],
+      };
+
+      dispatch({ type: "SET_PAPER_ACCOUNT", payload: updatedAccount });
+      if (state.audioEnabled) {
+        playTradeChime("high");
+      }
+      addToast(
+        `🚀 تم تنفيذ صفقة Paper Trading بنجاح: ${targetRec.symbol} [${targetRec.status}] برصيد $${tradeAmount} (خصم الرسوم والانزلاق تلقائياً)`,
+        "success",
+      );
+    },
+    [state.aiRecommendation, state.paperAccount, state.audioEnabled, addToast],
+  );
+
+  const closePaperPosition = useCallback(
+    (positionId: string, reason: PaperTradeHistory["closeReason"] = "MANUAL_CLOSE") => {
+      const pos = state.paperAccount.positions.find((p) => p.id === positionId);
+      if (!pos) return;
+
+      const exitSlippage = pos.direction === "SHORT" ? 1.0004 : 0.9996;
+      const exitPrice = pos.currentPrice * exitSlippage;
+      const exitFee = pos.amount * 0.0008;
+      const totalFees = pos.feesPaid + exitFee;
+      const grossPnl =
+        pos.direction === "SHORT"
+          ? (pos.entryPrice - exitPrice) * pos.quantity
+          : (exitPrice - pos.entryPrice) * pos.quantity;
+      const netPnl = grossPnl - exitFee;
+      const pnlPct = (netPnl / pos.amount) * 100;
+
+      const newBalance = Math.round((state.paperAccount.balance + pos.amount + netPnl) * 100) / 100;
+      const surviving = state.paperAccount.positions.filter((p) => p.id !== positionId);
+      const totalUnrealized = surviving.reduce((s, p) => s + p.unrealizedPnl, 0);
+
+      const historyItem: PaperTradeHistory = {
+        id: `pclose_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        positionId: pos.id,
+        symbol: pos.symbol,
+        direction: pos.direction,
+        entryPrice: pos.entryPrice,
+        exitPrice: Math.round(exitPrice * 10000) / 10000,
+        amount: pos.amount,
+        quantity: pos.quantity,
+        pnl: Math.round(netPnl * 100) / 100,
+        pnlPct: Math.round(pnlPct * 100) / 100,
+        totalFees: Math.round(totalFees * 100) / 100,
+        closeReason: reason,
+        openedAt: pos.openedAt,
+        closedAt: Date.now(),
+        modelUsed: pos.modelUsed,
+      };
+
+      const updatedAccount: PaperAccount = {
+        ...state.paperAccount,
+        balance: newBalance,
+        equity: Math.round((newBalance + totalUnrealized) * 100) / 100,
+        positions: surviving,
+        history: [historyItem, ...state.paperAccount.history],
+      };
+
+      dispatch({ type: "SET_PAPER_ACCOUNT", payload: updatedAccount });
+      addToast(
+        `تم إغلاق صفقة ${pos.symbol} (${reason}) بصافي ربح/خسارة: ${netPnl >= 0 ? "+" : ""}$${netPnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`,
+        netPnl >= 0 ? "success" : "info",
+      );
+    },
+    [state.paperAccount, addToast],
+  );
+
+  const resetPaperAccount = useCallback(() => {
+    dispatch({ type: "RESET_PAPER_ACCOUNT" });
+    try {
+      localStorage.removeItem(STORAGE_KEY_PAPER_ACCOUNT);
+    } catch {}
+    addToast("تمت إعادة ضبط محفظة التداول التجريبي (Paper Trading) إلى $10,000", "info");
+  }, [addToast]);
+
+  const setIsPaperModalOpen = useCallback(
+    (open: boolean) => dispatch({ type: "SET_PAPER_MODAL_OPEN", payload: open }),
+    [],
+  );
+
+  const setActiveControlSection = useCallback(
+    (idx: number) => dispatch({ type: "SET_ACTIVE_CONTROL_SECTION", payload: idx }),
+    [],
+  );
+
+  // ── AI Diagnostics Connection Probe ──────────────────────────────────
+  const testAiConnection = useCallback(
+    async (customKey?: string, customModel?: AiModelOption): Promise<AiTestConnectionResult> => {
+      dispatch({ type: "SET_TESTING_AI_CONNECTION", payload: true });
+      const modelToTest = customModel || state.apiSettings.selectedModel || "gemini-2.0-flash";
+      const keyToTest =
+        customKey !== undefined
+          ? customKey
+          : modelToTest.startsWith("groq")
+          ? state.apiSettings.groqKey
+          : modelToTest === "claude-3.5-sonnet" || modelToTest === "gpt-4o"
+          ? state.apiSettings.openRouterKey
+          : state.apiSettings.geminiKey;
+
+      try {
+        const res = await fetch("/api/ai-test-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiKey: keyToTest,
+            model: modelToTest,
+          }),
+        });
+
+        const result: AiTestConnectionResult = await res.json();
+        dispatch({ type: "SET_AI_TEST_RESULT", payload: result });
+
+        if (result.ok) {
+          addToast(`✅ ${result.messageArabic}`, "success");
+          if (state.audioEnabled) {
+            playTradeChime("high");
+          }
+        } else {
+          addToast(`⚠️ ${result.messageArabic}`, "error");
+        }
+        return result;
+      } catch (err) {
+        const fallbackResult: AiTestConnectionResult = {
+          ok: false,
+          status: "NETWORK_ERROR",
+          provider: "AI Diagnostic Engine",
+          model: modelToTest,
+          latencyMs: 0,
+          messageArabic: "تعذر إرسال طلب الفحص إلى خادم التشخيص",
+          balanceInfo: "الرصيد غير متاح عبر API",
+          testedAt: Date.now(),
+        };
+        dispatch({ type: "SET_AI_TEST_RESULT", payload: fallbackResult });
+        addToast("تعذر إرسال طلب الفحص إلى خادم التشخيص", "error");
+        return fallbackResult;
+      } finally {
+        dispatch({ type: "SET_TESTING_AI_CONNECTION", payload: false });
+      }
+    },
+    [state.apiSettings, state.audioEnabled, addToast],
+  );
+
   return (
     <StoreContext.Provider
       value={{
@@ -975,6 +1369,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         fetchSavedSignals,
         setMobileActiveTab,
         triggerTestSignalPipeline,
+        openPaperTrade,
+        closePaperPosition,
+        resetPaperAccount,
+        setIsPaperModalOpen,
+        setActiveControlSection,
+        testAiConnection,
       }}
     >
       {children}

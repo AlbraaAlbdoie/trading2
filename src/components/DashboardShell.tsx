@@ -5,6 +5,7 @@
 
 import React from "react";
 import { TopNavBar } from "@/components/layout/TopNavBar";
+import { TopControlCarousel } from "@/components/layout/TopControlCarousel";
 import { MarketHealthBar } from "@/components/layout/MarketHealthBar";
 import { SplitView } from "@/components/layout/SplitView";
 import { ScreenerTable } from "@/components/screener/ScreenerTable";
@@ -13,6 +14,7 @@ import { RightSidebar } from "@/components/sidebar/RightSidebar";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { TradeJournalModal } from "@/components/journal/TradeJournalModal";
 import { SavedSignalsModal } from "@/components/signals/SavedSignalsModal";
+import { PaperTradingModal } from "@/components/papertrading/PaperTradingModal";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { ToastContainer } from "@/components/ui/ToastContainer";
@@ -60,6 +62,9 @@ export function DashboardShell() {
       {/* Top Navigation */}
       <TopNavBar />
 
+      {/* Swipeable 5-Section Top Controls Bar */}
+      <TopControlCarousel />
+
       {/* Market Health Sub-bar */}
       <MarketHealthBar />
 
@@ -79,6 +84,7 @@ export function DashboardShell() {
       <SettingsModal />
       <TradeJournalModal />
       <SavedSignalsModal />
+      <PaperTradingModal />
       <AuthModal />
 
       {/* Toast Notifications System */}

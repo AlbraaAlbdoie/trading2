@@ -26,6 +26,7 @@ import {
   Database,
   Crosshair,
   AlertTriangle,
+  Wallet,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +36,13 @@ import { formatPrice, cn } from "@/lib/utils";
 import { playTradeChime } from "@/hooks/useAudioAlert";
 
 export function AiRecommendationCard() {
-  const { state, runAiAnalysis, saveCurrentSignal } = useDashboardStore();
+  const {
+    state,
+    runAiAnalysis,
+    saveCurrentSignal,
+    openPaperTrade,
+    setIsPaperModalOpen,
+  } = useDashboardStore();
   const {
     aiRecommendation: rec,
     isAiAnalyzing,
@@ -234,6 +241,46 @@ export function AiRecommendationCard() {
       </CardHeader>
 
       <CardContent className="p-3.5 pt-1 space-y-3">
+        {/* Source Provenance Transparency Bar */}
+        {rec.ai_source_type === "AI_SUCCESS" ? (
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#10B981]/10 border border-[#10B981]/30 text-xs">
+            <div className="flex items-center gap-1.5 text-[#10B981] font-semibold">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>تحليل بالذكاء الاصطناعي ({rec.model_used})</span>
+            </div>
+            {typeof rec.ai_latency_ms === "number" && (
+              <span className="font-mono text-[10px] text-[#6EE7B7] px-1.5 py-0.5 rounded bg-black/40">
+                استجابة: {rec.ai_latency_ms}ms ⚡
+              </span>
+            )}
+          </div>
+        ) : rec.ai_source_type === "FALLBACK_DETERMINISTIC" ? (
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#3B82F6]/10 border border-[#3B82F6]/30 text-xs">
+            <div className="flex items-center gap-1.5 text-[#60A5FA] font-semibold">
+              <Cpu className="h-3.5 w-3.5" />
+              <span>تحليل بالمحرك الرياضي الحتمي — لم تُستخدم استجابة AI</span>
+            </div>
+            <span className="text-[10px] text-[#93C5FD]">
+              {rec.ai_error_reason || "توفير الاستهلاك: السوق غير مؤهل"}
+            </span>
+          </div>
+        ) : rec.ai_source_type ? (
+          <div className="p-2.5 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-xs space-y-1">
+            <div className="flex items-center justify-between text-[#F59E0B] font-bold">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>تحليل بالمحرك الحتمي — تعذّر تحليل AI</span>
+              </div>
+              <Badge variant="warning" className="text-[9px] px-1.5 py-0">
+                بديل رياضي داخلي
+              </Badge>
+            </div>
+            <p className="text-[11px] text-[#CBD5E1] mr-5">
+              {rec.ai_error_reason || "حدث خطأ في الاتصال بالذكاء الاصطناعي، والنتيجة الحالية مبنية بالكامل على التحليل الرياضي الداخلي."}
+            </p>
+          </div>
+        ) : null}
+
         {/* Market Closed Banner Notice */}
         {isMarketClosed && (
           <div className="p-3 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 space-y-1">
@@ -614,6 +661,30 @@ export function AiRecommendationCard() {
                 {rec.bullet_signal.reasoning_arabic}
               </p>
             )}
+          </div>
+        )}
+
+        {/* 🚀 Paper Trading Execution Action Button */}
+        {!isNoTrade && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="scanner"
+              size="sm"
+              onClick={() => openPaperTrade(rec, 1000)}
+              className="flex-1 font-bold text-xs py-2 bg-[#10B981] hover:bg-[#059669] text-white shadow-md shadow-emerald-500/20 cursor-pointer gap-1.5"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              <span>تنفيذ صفقة تجريبية ($1,000 Paper Trade)</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsPaperModalOpen(true)}
+              className="h-8 px-2.5 text-xs text-[#10B981] border-[#10B981]/40 hover:bg-[#10B981]/10 cursor-pointer"
+              title="عرض محفظة التداول التجريبي"
+            >
+              المحفظة
+            </Button>
           </div>
         )}
 

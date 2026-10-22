@@ -47,6 +47,79 @@ export interface ApiSettingsConfig {
   telegramChatId?: string;
 }
 
+/** AI Model & Provenance Source Types */
+export type AiSourceType =
+  | "AI_SUCCESS"              // استجابة الذكاء الاصطناعي ناجحة
+  | "FALLBACK_DETERMINISTIC"  // محرك الحسابات الرياضية الحتمي (تم تجاوز AI للتوفير أو استخدامه كبديل)
+  | "AI_ERROR"               // حدث خطأ في نموذج AI وتم التحويل للمحرك الرياضي
+  | "AI_UNAVAILABLE"         // مزود AI غير متاح
+  | "AI_QUOTA_EXCEEDED"      // تم تجاوز حد الاستخدام / الكوتا
+  | "AI_NOT_CONFIGURED";     // مفتاح الـ API غير مضبوط
+
+export interface AiTestConnectionResult {
+  ok: boolean;
+  status:
+    | "CONNECTED"
+    | "INVALID_KEY"
+    | "RATE_LIMIT"
+    | "QUOTA_EXCEEDED"
+    | "MODEL_UNAVAILABLE"
+    | "NETWORK_ERROR"
+    | "NOT_CONFIGURED";
+  provider: string;
+  model: string;
+  latencyMs: number;
+  messageArabic: string;
+  balanceInfo: string;
+  testedAt: number;
+}
+
+/** Paper Trading Simulated Execution Types */
+export interface PaperPosition {
+  id: string;
+  symbol: string;
+  direction: "LONG" | "SHORT" | "SPOT_BUY";
+  entryPrice: number;
+  currentPrice: number;
+  amount: number;             // USDT allocated
+  quantity: number;           // base token units
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  unrealizedPnl: number;      // in USDT (after simulated fees)
+  unrealizedPnlPct: number;   // net %
+  feesPaid: number;           // simulated entry + exit fees
+  openedAt: number;
+  modelUsed?: string;
+  aiSourceType?: AiSourceType;
+}
+
+export interface PaperTradeHistory {
+  id: string;
+  positionId: string;
+  symbol: string;
+  direction: "LONG" | "SHORT" | "SPOT_BUY";
+  entryPrice: number;
+  exitPrice: number;
+  amount: number;
+  quantity: number;
+  pnl: number;                // net in USDT
+  pnlPct: number;
+  totalFees: number;
+  closeReason: "TAKE_PROFIT_1" | "TAKE_PROFIT_2" | "STOP_LOSS" | "MANUAL_CLOSE";
+  openedAt: number;
+  closedAt: number;
+  modelUsed?: string;
+}
+
+export interface PaperAccount {
+  balance: number;            // virtual cash balance (starts at $10,000)
+  initialBalance: number;     // $10,000
+  equity: number;             // balance + sum of unrealized PnL
+  positions: PaperPosition[];
+  history: PaperTradeHistory[];
+}
+
 /** Standard Candlestick data */
 export interface CandleData {
   openTime: number;
@@ -183,6 +256,9 @@ export interface AiTradeRecommendation {
   reasoning_arabic: string;
   btc_warning: string | null;
   model_used?: string;
+  ai_source_type?: AiSourceType;
+  ai_latency_ms?: number;
+  ai_error_reason?: string;
   timestamp: number;
   bullet_signal?: BulletSignal;
   quant_matrix?: QuantMatrix;

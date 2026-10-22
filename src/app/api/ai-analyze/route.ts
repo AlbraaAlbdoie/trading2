@@ -385,6 +385,8 @@ export async function POST(req: Request) {
           "⚠️ سوق الذهب العالمي مغلق حالياً بسبب عطلة نهاية الأسبوع (السبت والأحد). يفتح السوق مساء اليوم الأحد الساعة 11:00 مساءً بتوقيت مكة.",
         btc_warning: "سوق الذهب مغلق",
         model_used: "Gold Market Guard",
+        ai_source_type: "FALLBACK_DETERMINISTIC",
+        ai_error_reason: "سوق الذهب مغلق في عطلة نهاية الأسبوع",
         timestamp: Date.now(),
       });
     }
@@ -540,6 +542,8 @@ export async function POST(req: Request) {
       );
       btcAlertRec.model_used = "BTC Dump Guard Engine";
       btcAlertRec.bullet_signal = bulletSignal;
+      btcAlertRec.ai_source_type = "FALLBACK_DETERMINISTIC";
+      btcAlertRec.ai_error_reason = "تفعيل حارس البيتكوين الوقائي لحماية رأس المال";
       return NextResponse.json(btcAlertRec);
     }
 
@@ -555,6 +559,11 @@ export async function POST(req: Request) {
       );
       creditSaverRec.model_used = "Deterministic Quant Engine (Smart Credit Saver)";
       creditSaverRec.bullet_signal = bulletSignal;
+      creditSaverRec.ai_source_type = "FALLBACK_DETERMINISTIC";
+      creditSaverRec.ai_error_reason =
+        quantMatrix.trend === "CHOPPY_SIDEWAYS"
+          ? "توفير الاستهلاك: السوق في نطاق عرضي متذبذب، تم استخدام المحرك الحتمي"
+          : `توفير الاستهلاك: السيولة الحالية (${quantMatrix.rvol.toFixed(2)}x) أقل من الحد الأدنى (${RVOL_MIN_THRESHOLD}x)`;
       return NextResponse.json(creditSaverRec);
     }
 
@@ -602,6 +611,7 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
     // ── Step 5: Multi-Provider AI Inference with Resilient Fallback ──
     let rawAiResponse = "";
     let modelName = "";
+    const aiStartTime = performance.now();
 
     try {
       if (selectedModel === "gemini-2.0-flash" && geminiKey) {
@@ -631,8 +641,11 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
         }
       }
 
+      const aiLatencyMs = Math.round(performance.now() - aiStartTime);
       const parsed: AiTradeRecommendation = cleanAndParseJson<AiTradeRecommendation>(rawAiResponse);
       parsed.model_used = modelName;
+      parsed.ai_source_type = "AI_SUCCESS";
+      parsed.ai_latency_ms = aiLatencyMs;
       parsed.timestamp = Date.now();
       parsed.bullet_signal = bulletSignal;
       parsed.quant_matrix = quantMatrix;
@@ -696,6 +709,24 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
       return NextResponse.json(parsed);
     } catch (aiCallErr) {
       console.warn("[API] AI provider call fallback to Deterministic Quant Engine:", aiCallErr);
+      const errMsg = aiCallErr instanceof Error ? aiCallErr.message : String(aiCallErr);
+      let errorSource: AiAnalysisRequest extends unknown ? "AI_ERROR" | "AI_QUOTA_EXCEEDED" | "AI_NOT_CONFIGURED" | "AI_UNAVAILABLE" : never = "AI_ERROR";
+      let errorReasonArabic = "تعذر الاتصال بمزود الذكاء الاصطناعي — تم التحويل للمحرك الحتمي";
+
+      if (errMsg.includes("No active API keys")) {
+        errorSource = "AI_NOT_CONFIGURED";
+        errorReasonArabic = "لم يتم ضبط مفتاح API للذكاء الاصطناعي — تم استخدام التحليل الرياضي الداخلي";
+      } else if (errMsg.includes("429")) {
+        errorSource = "AI_QUOTA_EXCEEDED";
+        errorReasonArabic = "تم تجاوز حد الاستخدام / الكوتا (429) لمزود AI — تم استخدام التحليل الرياضي الداخلي";
+      } else if (errMsg.includes("401") || errMsg.includes("403")) {
+        errorSource = "AI_ERROR";
+        errorReasonArabic = "مفتاح API غير صالح أو غير مصرح به (401/403) — تم استخدام التحليل الرياضي الداخلي";
+      } else if (errMsg.includes("404")) {
+        errorSource = "AI_UNAVAILABLE";
+        errorReasonArabic = "النموذج المطلوب غير متاح حالياً لدى مزود الخدمة — تم استخدام التحليل الرياضي الداخلي";
+      }
+
       const fallbackRec = generateDeterministicQuantRecommendation(
         symbol,
         quantMatrix,
@@ -704,8 +735,10 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
         market,
         lastClosedCandle,
       );
-      fallbackRec.model_used = `Deterministic Quant Engine (${modelName || "محرك الرياضيات الصارم"})`;
+      fallbackRec.model_used = `Deterministic Quant Engine (${modelName || "المحرك الرياضي الحتمي"})`;
       fallbackRec.bullet_signal = bulletSignal;
+      fallbackRec.ai_source_type = errorSource;
+      fallbackRec.ai_error_reason = errorReasonArabic;
 
       // Run final validator on fallback too
       if (fallbackRec.status === "LONG" || fallbackRec.status === "SHORT" || fallbackRec.status === "SPOT_BUY") {
@@ -739,6 +772,8 @@ Act strictly as the Chief Risk Officer. If Trend is CHOPPY_SIDEWAYS, RVOL < ${RV
         reasoning_arabic:
           "تعذر الاتصال بمزود الذكاء الاصطناعي مؤقتاً. حفاظاً على رأس المال وقواعد إدارة المخاطر، يُرجى البقاء خارج السوق.",
         btc_warning: null,
+        ai_source_type: "AI_ERROR",
+        ai_error_reason: "حدث خطأ غير متوقع أثناء معالجة البيانات الفنية",
         timestamp: Date.now(),
       },
       { status: 200 },

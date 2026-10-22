@@ -21,6 +21,7 @@ import {
   LogOut,
   LogIn,
   Bell,
+  Wallet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export function TopNavBar() {
     setIsJournalOpen,
     setIsSavedSignalsOpen,
     setIsAuthModalOpen,
+    setIsPaperModalOpen,
     signOutUser,
     triggerTestSignalPipeline,
   } = useDashboardStore();
@@ -52,6 +54,7 @@ export function TopNavBar() {
     journalEntries,
     savedSignals,
     authUser,
+    paperAccount,
   } = state;
 
   const handleAudioToggle = () => {
@@ -94,6 +97,22 @@ export function TopNavBar() {
               </span>
             </div>
           </div>
+
+          {/* Quick Paper Trading Pill */}
+          <button
+            onClick={() => setIsPaperModalOpen(true)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#10B981]/15 border border-[#10B981]/30 hover:border-[#10B981] transition-all cursor-pointer text-xs"
+            title="فتح محفظة التداول التجريبي (رصيد افتراضي: $10,000)"
+          >
+            <Wallet className="h-3.5 w-3.5 text-[#10B981]" />
+            <span className="font-mono text-[11px] font-bold text-[#E2E8F0]">
+              ${formatPrice(paperAccount.balance)}
+            </span>
+            <span className="text-[9px] text-[#10B981] font-bold hidden sm:inline">
+              تجريبي
+            </span>
+          </button>
+
           <div className="h-4 w-px bg-[#1E293B] hidden sm:block" />
         </div>
 
